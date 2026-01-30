@@ -13,7 +13,7 @@ from . import __version__
 
 console = Console()
 
-GITHUB_REPO = "studibudi/adw"
+GITHUB_REPO = "mhmdez/adw"
 PYPI_PACKAGE = "adw"
 
 

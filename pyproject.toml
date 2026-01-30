@@ -37,9 +37,9 @@ dev = [
 adw = "adw.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/studibudi/adw"
-Repository = "https://github.com/studibudi/adw"
-Issues = "https://github.com/studibudi/adw/issues"
+Homepage = "https://github.com/mhmdez/adw"
+Repository = "https://github.com/mhmdez/adw"
+Issues = "https://github.com/mhmdez/adw/issues"
 
 [build-system]
 requires = ["hatchling"]

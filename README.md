@@ -194,7 +194,7 @@ How it will be tested...
 
 ```bash
 # Clone the repo
-git clone https://github.com/studibudi/adw.git
+git clone https://github.com/mhmdez/adw.git
 cd adw
 
 # Install dependencies
