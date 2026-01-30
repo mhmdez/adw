@@ -1,0 +1,1 @@
+"""Command templates for ADW."""
