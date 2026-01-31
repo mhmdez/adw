@@ -1,6 +1,6 @@
 [project]
 name = "adw-cli"
-version = "0.2.3"
+version = "0.2.4"
 description = "AI Developer Workflow CLI - Orchestrate Claude Code for any project"
 readme = "README.md"
 license = { text = "MIT" }
@@ -59,6 +59,7 @@ include = [
     "src/adw/**/*.py",
     "src/adw/**/*.js",
     "src/adw/**/*.mjs",
+    "src/adw/**/*.md",
 ]
 
 [tool.ruff]
