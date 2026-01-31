@@ -6,13 +6,27 @@ import subprocess
 import asyncio
 from pathlib import Path
 from datetime import datetime
+from dataclasses import dataclass
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Static, Input, Footer, Header
 from textual.reactive import reactive
+from textual.message import Message
 from rich.text import Text
+
+
+@dataclass
+class TaskSelected(Message):
+    """Message when a task is selected for viewing."""
+    task: "TaskState"
+
+
+@dataclass  
+class TaskCancel(Message):
+    """Message when a task is cancelled."""
+    task: "TaskState"
 
 from .state import AppState, TaskState
 from .log_watcher import LogWatcher, LogEvent, QuestionEvent
@@ -34,17 +48,24 @@ from .styles import APP_CSS
 SPINNER = SPINNERS["dots"]
 
 
-class TaskInbox(Vertical):
-    """Task inbox showing all tasks with live status."""
+class TaskInbox(Vertical, can_focus=True):
+    """Task inbox showing all tasks with live status.
+    
+    Navigate with ↑↓ arrows, Enter to view logs, Tab to switch sections.
+    """
 
     DEFAULT_CSS = """
     TaskInbox {
         width: 100%;
         height: auto;
-        max-height: 12;
+        max-height: 14;
         padding: 0 1;
         background: #111;
         border: round #222;
+    }
+
+    TaskInbox:focus {
+        border: round #00D4FF;
     }
 
     TaskInbox > #inbox-header {
@@ -67,22 +88,82 @@ class TaskInbox(Vertical):
     .task-item:hover {
         background: #1a1a1a;
     }
+    
+    .task-item.-selected {
+        background: #1a3a4a;
+        color: #00D4FF;
+    }
+    
+    TaskInbox > #task-hint {
+        height: 1;
+        color: #666;
+        text-align: right;
+    }
     """
+
+    BINDINGS = [
+        Binding("up", "select_prev", "Previous", show=False),
+        Binding("down", "select_next", "Next", show=False),
+        Binding("enter", "view_selected", "View Logs", show=False),
+        Binding("p", "pause_resume", "Pause/Resume", show=False),
+        Binding("c", "cancel_selected", "Cancel", show=False),
+    ]
 
     spinner_frame = reactive(0)
 
     def __init__(self):
         super().__init__()
         self._tasks: dict[str, TaskState] = {}
+        self._task_keys: list[str] = []  # Ordered keys for navigation
+        self._selected_index: int = 0
         self._selected_key: str | None = None
         self._has_running = False
 
     def compose(self) -> ComposeResult:
         yield Static(f"[bold {COLORS['primary']}]📋 TASKS[/]", id="inbox-header")
         yield Container(id="task-container")
+        yield Static("[dim]↑↓ navigate  Enter view  P pause  C cancel[/dim]", id="task-hint")
 
     def on_mount(self) -> None:
         self.set_interval(0.1, self._tick_spinner)
+
+    def action_select_prev(self) -> None:
+        """Select previous task."""
+        if self._task_keys and self._selected_index > 0:
+            self._selected_index -= 1
+            self._selected_key = self._task_keys[self._selected_index]
+            self._update_display()
+
+    def action_select_next(self) -> None:
+        """Select next task."""
+        if self._task_keys and self._selected_index < len(self._task_keys) - 1:
+            self._selected_index += 1
+            self._selected_key = self._task_keys[self._selected_index]
+            self._update_display()
+
+    def action_view_selected(self) -> None:
+        """View logs for selected task."""
+        if self._selected_key and self._selected_key in self._tasks:
+            task = self._tasks[self._selected_key]
+            # Post event to parent to show logs
+            self.post_message(TaskSelected(task))
+
+    def action_pause_resume(self) -> None:
+        """Pause or resume daemon."""
+        from ..daemon_state import read_state, request_pause, request_resume, DaemonStatus
+        state = read_state()
+        if state.status == DaemonStatus.PAUSED:
+            request_resume()
+        elif state.status == DaemonStatus.RUNNING:
+            request_pause()
+
+    def action_cancel_selected(self) -> None:
+        """Cancel selected task."""
+        if self._selected_key and self._selected_key in self._tasks:
+            task = self._tasks[self._selected_key]
+            if task.status == TaskStatus.IN_PROGRESS:
+                # Post cancel event
+                self.post_message(TaskCancel(task))
 
     def _tick_spinner(self) -> None:
         # Only update display if there are running tasks (need spinner animation)
@@ -94,6 +175,30 @@ class TaskInbox(Vertical):
         """Update the task list."""
         self._tasks = tasks
         self._has_running = any(t.status == TaskStatus.IN_PROGRESS for t in tasks.values())
+        
+        # Rebuild ordered keys
+        def sort_key(item):
+            k, t = item
+            order = {
+                TaskStatus.IN_PROGRESS: 0,
+                TaskStatus.PENDING: 1,
+                TaskStatus.BLOCKED: 2,
+                TaskStatus.FAILED: 3,
+                TaskStatus.DONE: 4,
+            }
+            return (order.get(t.status, 5), k)
+        
+        self._task_keys = [k for k, _ in sorted(tasks.items(), key=sort_key)]
+        
+        # Ensure selected index is valid
+        if self._task_keys:
+            if self._selected_index >= len(self._task_keys):
+                self._selected_index = len(self._task_keys) - 1
+            self._selected_key = self._task_keys[self._selected_index]
+        else:
+            self._selected_index = 0
+            self._selected_key = None
+        
         self._update_display()
 
     def select_task(self, key: str | None) -> None:
@@ -110,21 +215,12 @@ class TaskInbox(Vertical):
             container.mount(Static("[dim]No tasks yet. Use /new <task>[/dim]"))
             return
 
-        # Sort: running first, then pending, then done
-        def sort_key(item):
-            k, t = item
-            order = {
-                TaskStatus.IN_PROGRESS: 0,
-                TaskStatus.PENDING: 1,
-                TaskStatus.BLOCKED: 2,
-                TaskStatus.FAILED: 3,
-                TaskStatus.DONE: 4,
-            }
-            return (order.get(t.status, 5), k)
-
-        for key, task in sorted(self._tasks.items(), key=sort_key):
-            widget = self._make_task_widget(key, task)
-            container.mount(widget)
+        # Use pre-sorted keys
+        for key in self._task_keys:
+            if key in self._tasks:
+                task = self._tasks[key]
+                widget = self._make_task_widget(key, task)
+                container.mount(widget)
 
     def _make_task_widget(self, key: str, task: TaskState) -> Static:
         """Create a widget for a single task."""

@@ -339,7 +339,55 @@ def init_project(
         else:
             result["skipped"].append("CLAUDE.md")
 
+    # Update .gitignore
+    gitignore_result = update_gitignore(project_path)
+    if gitignore_result == "created":
+        result["created"].append(".gitignore")
+    elif gitignore_result == "updated":
+        result["updated"].append(".gitignore")
+    elif gitignore_result == "skipped":
+        result["skipped"].append(".gitignore (already has ADW entries)")
+
     return result
+
+
+ADW_GITIGNORE_BLOCK = """
+# ADW - AI Developer Workflow
+agents/
+.adw/
+trees/
+*.adw.log
+"""
+
+ADW_GITIGNORE_MARKER = "# ADW - AI Developer Workflow"
+
+
+def update_gitignore(project_path: Path) -> str | None:
+    """Update .gitignore with ADW entries.
+    
+    Args:
+        project_path: Path to project root.
+        
+    Returns:
+        "created", "updated", "skipped", or None if no .gitignore exists
+    """
+    gitignore_path = project_path / ".gitignore"
+    
+    if gitignore_path.exists():
+        content = gitignore_path.read_text()
+        
+        # Already has ADW section
+        if ADW_GITIGNORE_MARKER in content:
+            return "skipped"
+        
+        # Append ADW section
+        new_content = content.rstrip() + "\n" + ADW_GITIGNORE_BLOCK
+        gitignore_path.write_text(new_content)
+        return "updated"
+    else:
+        # Create new .gitignore
+        gitignore_path.write_text(ADW_GITIGNORE_BLOCK.lstrip())
+        return "created"
 
 
 def print_init_summary(result: dict[str, list[str]]) -> None:

@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 
 from .models import TaskStatus
+
+
+HISTORY_HEADER = """# ADW Task History
+
+*Archived completed and failed tasks*
+
+---
+
+"""
 
 
 def update_task_status(
@@ -67,16 +77,136 @@ def update_task_status(
     return updated
 
 
+def archive_to_history(
+    tasks_path: Path,
+    description: str,
+    status: str,
+    adw_id: str,
+    duration: str | None = None,
+    error: str | None = None,
+) -> bool:
+    """Archive a completed/failed task to history.md.
+    
+    Args:
+        tasks_path: Path to tasks.md (history.md will be in same dir)
+        description: Task description
+        status: "completed" or "failed"
+        adw_id: ADW ID
+        duration: Duration string (e.g., "2m 34s")
+        error: Error message for failed tasks
+        
+    Returns:
+        True if archived successfully
+    """
+    history_path = tasks_path.parent / "history.md"
+    
+    # Create history file if doesn't exist
+    if not history_path.exists():
+        history_path.write_text(HISTORY_HEADER)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    if status == "completed":
+        emoji = "✅"
+        line = f"- {emoji} [{adw_id[:8]}] {description[:60]}"
+        if duration:
+            line += f" ({duration})"
+        line += f" — {timestamp}"
+    else:
+        emoji = "❌"
+        line = f"- {emoji} [{adw_id[:8]}] {description[:60]}"
+        if error:
+            line += f" — {error[:50]}"
+        line += f" — {timestamp}"
+    
+    # Append to history
+    content = history_path.read_text()
+    
+    # Find today's section or create it
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_header = f"\n## {today}\n"
+    
+    if today_header.strip() not in content:
+        content = content.rstrip() + f"\n{today_header}\n"
+    
+    # Insert after today's header
+    parts = content.split(today_header)
+    if len(parts) == 2:
+        parts[1] = line + "\n" + parts[1]
+        content = today_header.join(parts)
+    else:
+        content = content.rstrip() + "\n" + line + "\n"
+    
+    history_path.write_text(content)
+    return True
+
+
+def remove_from_tasks(path: Path, description: str) -> bool:
+    """Remove a task line from tasks.md.
+    
+    Used after archiving to keep tasks.md clean.
+    """
+    if not path.exists():
+        return False
+    
+    content = path.read_text()
+    lines = content.split("\n")
+    desc_escaped = re.escape(description.strip())
+    
+    new_lines = []
+    removed = False
+    
+    for line in lines:
+        if re.search(rf"\]\s*.*{desc_escaped}", line, re.IGNORECASE):
+            removed = True
+            continue  # Skip this line
+        new_lines.append(line)
+    
+    if removed:
+        path.write_text("\n".join(new_lines))
+    
+    return removed
+
+
 def mark_in_progress(path: Path, description: str, adw_id: str) -> bool:
     """Mark task as in-progress."""
     return update_task_status(path, description, TaskStatus.IN_PROGRESS, adw_id=adw_id)
 
 
-def mark_done(path: Path, description: str, adw_id: str, commit: str | None = None) -> bool:
-    """Mark task as done."""
-    return update_task_status(path, description, TaskStatus.DONE, adw_id=adw_id, commit_hash=commit)
+def mark_done(
+    path: Path,
+    description: str,
+    adw_id: str,
+    commit: str | None = None,
+    duration: str | None = None,
+    archive: bool = True,
+) -> bool:
+    """Mark task as done and optionally archive to history."""
+    result = update_task_status(
+        path, description, TaskStatus.DONE, adw_id=adw_id, commit_hash=commit
+    )
+    
+    if result and archive:
+        archive_to_history(path, description, "completed", adw_id, duration=duration)
+        # Optionally remove from tasks.md to keep it clean
+        # remove_from_tasks(path, description)
+    
+    return result
 
 
-def mark_failed(path: Path, description: str, adw_id: str, error: str) -> bool:
-    """Mark task as failed."""
-    return update_task_status(path, description, TaskStatus.FAILED, adw_id=adw_id, error_message=error)
+def mark_failed(
+    path: Path,
+    description: str,
+    adw_id: str,
+    error: str,
+    archive: bool = True,
+) -> bool:
+    """Mark task as failed and optionally archive to history."""
+    result = update_task_status(
+        path, description, TaskStatus.FAILED, adw_id=adw_id, error_message=error
+    )
+    
+    if result and archive:
+        archive_to_history(path, description, "failed", adw_id, error=error)
+    
+    return result

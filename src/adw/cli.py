@@ -76,20 +76,74 @@ def dashboard() -> None:
 
 @main.command()
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing files")
+@click.option("--smart", "-s", is_flag=True, help="Use Claude Code to analyze project (slower but better)")
+@click.option("--quick", "-q", is_flag=True, help="Skip analysis, use templates only")
 @click.argument("path", required=False, type=click.Path(exists=True, path_type=Path))
-def init(force: bool, path: Path | None) -> None:
+def init(force: bool, smart: bool, quick: bool, path: Path | None) -> None:
     """Initialize ADW in the current project.
 
     Creates .claude/ directory with commands and agents,
     tasks.md for task tracking, and specs/ for feature specs.
 
-    If CLAUDE.md exists, appends orchestration section.
-    Otherwise, generates a new one based on detected project type.
+    Use --smart for Claude Code to analyze your project and generate
+    tailored documentation (takes ~30-60 seconds).
+
+    \\b
+    Examples:
+        adw init              # Standard init with detection
+        adw init --smart      # Deep analysis with Claude Code
+        adw init --quick      # Fast init, templates only
     """
     project_path = path or Path.cwd()
 
     console.print(f"[bold cyan]Initializing ADW in {project_path.name}[/bold cyan]")
     console.print()
+
+    if smart and not quick:
+        # Smart init with Claude Code analysis
+        from .analyze import (
+            analyze_project,
+            generate_claude_md_from_analysis,
+            generate_architecture_md,
+        )
+        
+        console.print("[dim]🔍 Analyzing project with Claude Code...[/dim]")
+        console.print("[dim]   This may take 30-60 seconds[/dim]")
+        console.print()
+        
+        with console.status("[cyan]Analyzing...[/cyan]"):
+            analysis = analyze_project(project_path, verbose=True)
+        
+        if analysis:
+            console.print(f"[green]✓ Detected: {analysis.name}[/green]")
+            console.print(f"[dim]  Stack: {', '.join(analysis.stack)}[/dim]")
+            console.print(f"[dim]  {len(analysis.structure)} folders, {len(analysis.key_files)} key files[/dim]")
+            console.print()
+            
+            # Generate docs from analysis
+            claude_md = generate_claude_md_from_analysis(
+                analysis.__dict__, project_path
+            )
+            architecture_md = generate_architecture_md(
+                analysis.__dict__, project_path
+            )
+            
+            # Write generated files
+            claude_path = project_path / "CLAUDE.md"
+            arch_path = project_path / "ARCHITECTURE.md"
+            
+            if force or not claude_path.exists():
+                claude_path.write_text(claude_md)
+                console.print("[green]✓ Generated CLAUDE.md[/green]")
+            
+            if force or not arch_path.exists():
+                arch_path.write_text(architecture_md)
+                console.print("[green]✓ Generated ARCHITECTURE.md[/green]")
+            
+            console.print()
+        else:
+            console.print("[yellow]⚠ Analysis failed, falling back to detection[/yellow]")
+            console.print()
 
     result = init_project(project_path, force=force)
     print_init_summary(result)
@@ -611,6 +665,103 @@ def status_cmd() -> None:
             adw_id = task.get("adw_id", "?")[:8]
             desc = task.get("description", "Unknown")[:50]
             console.print(f"  [{adw_id}] {desc}")
+
+
+@main.command("history")
+@click.option("--days", "-d", type=int, default=7, help="Number of days to show")
+@click.option("--failed", "-f", is_flag=True, help="Show only failed tasks")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show all history")
+def history_cmd(days: int, failed: bool, show_all: bool) -> None:
+    """View task history.
+
+    Shows completed and failed tasks from history.md.
+
+    \\b
+    Examples:
+        adw history           # Last 7 days
+        adw history -d 30     # Last 30 days
+        adw history -f        # Failed tasks only
+        adw history -a        # All history
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    
+    history_path = Path.cwd() / "history.md"
+    
+    if not history_path.exists():
+        console.print("[yellow]No history found[/yellow]")
+        console.print("[dim]Complete some tasks first![/dim]")
+        return
+    
+    content = history_path.read_text()
+    lines = content.split("\n")
+    
+    # Parse history
+    current_date = None
+    cutoff = datetime.now() - timedelta(days=days) if not show_all else None
+    
+    completed_count = 0
+    failed_count = 0
+    displayed = []
+    
+    for line in lines:
+        # Check for date header
+        if line.startswith("## "):
+            date_str = line[3:].strip()
+            try:
+                current_date = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                current_date = None
+            continue
+        
+        if not line.startswith("- "):
+            continue
+        
+        # Check date cutoff
+        if cutoff and current_date and current_date < cutoff:
+            continue
+        
+        # Count and filter
+        is_failed = "❌" in line
+        is_completed = "✅" in line
+        
+        if is_failed:
+            failed_count += 1
+        elif is_completed:
+            completed_count += 1
+        
+        if failed and not is_failed:
+            continue
+        
+        displayed.append((current_date, line))
+    
+    # Display
+    console.print(f"[bold]Task History[/bold]")
+    if not show_all:
+        console.print(f"[dim]Last {days} days — {completed_count} completed, {failed_count} failed[/dim]")
+    else:
+        console.print(f"[dim]All time — {completed_count} completed, {failed_count} failed[/dim]")
+    console.print()
+    
+    if not displayed:
+        console.print("[dim]No tasks found matching criteria[/dim]")
+        return
+    
+    # Group by date
+    current_header = None
+    for date, line in displayed:
+        date_str = date.strftime("%Y-%m-%d") if date else "Unknown"
+        if date_str != current_header:
+            current_header = date_str
+            console.print(f"\n[bold]{date_str}[/bold]")
+        
+        # Format line nicely
+        if "✅" in line:
+            console.print(f"  [green]{line[2:]}[/green]")
+        elif "❌" in line:
+            console.print(f"  [red]{line[2:]}[/red]")
+        else:
+            console.print(f"  {line[2:]}")
 
 
 # ============== Shell Completion ==============
