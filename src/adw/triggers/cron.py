@@ -254,6 +254,19 @@ async def run_daemon(
 
     daemon = CronDaemon(config)
 
+    # Subscribe to events for logging
+    def on_event(event: str, data: dict) -> None:
+        if event == "task_started":
+            print(f"[cron] 🚀 Started: {data['description']} ({data['adw_id']})")
+        elif event == "task_completed":
+            print(f"[cron] ✅ Completed: {data['description']}")
+        elif event == "task_failed":
+            print(f"[cron] ❌ Failed: {data['description']} - {data.get('error') or data.get('return_code')}")
+        elif event == "error":
+            print(f"[cron] ⚠️ Error: {data['error']}")
+
+    daemon.subscribe(on_event)
+
     # Setup signal handlers
     loop = asyncio.get_event_loop()
 

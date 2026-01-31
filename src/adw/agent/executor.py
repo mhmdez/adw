@@ -13,6 +13,7 @@ from .utils import generate_adw_id, get_output_dir
 
 
 # Environment variables safe to pass to subprocess
+# Note: We now pass full environment to support Claude Code OAuth and other auth methods
 SAFE_ENV_VARS = [
     "ANTHROPIC_API_KEY",
     "HOME", "USER", "PATH", "SHELL", "TERM", "LANG",
@@ -20,8 +21,12 @@ SAFE_ENV_VARS = [
 
 
 def get_safe_env() -> dict[str, str]:
-    """Get filtered environment for subprocess."""
-    env = {k: v for k, v in os.environ.items() if k in SAFE_ENV_VARS and v}
+    """Get environment for subprocess.
+    
+    Previously filtered to SAFE_ENV_VARS, but this broke Claude Code OAuth.
+    Now passes full environment with PYTHONUNBUFFERED added.
+    """
+    env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     return env
 

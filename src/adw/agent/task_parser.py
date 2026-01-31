@@ -11,7 +11,7 @@ from .models import Task, TaskStatus, Worktree
 # Regex patterns
 WORKTREE_PATTERN = re.compile(r"^##\s+(?:Worktree[:\s]+)?(.+)$", re.IGNORECASE)
 TASK_PATTERN = re.compile(
-    r"^\[(?P<status>[^\]]*)\]"
+    r"^\s*(?:-\s+)?\[(?P<status>[^\]]*)\]"
     r"(?:\s*,?\s*(?P<adw_id>[a-f0-9]{8}))?"
     r"(?:\s*,?\s*(?P<commit>[a-f0-9]{7,40}))?"
     r"\s+(?P<description>.+?)"
@@ -49,18 +49,24 @@ def parse_tags(tags_str: str | None) -> list[str]:
 def parse_tasks_md(content: str) -> list[Worktree]:
     """Parse tasks.md content."""
     worktrees: list[Worktree] = []
-    current: Worktree | None = None
+    current: Worktree | None = Worktree(name="Main")  # Default context
 
     for line_num, line in enumerate(content.split("\n"), 1):
         line = line.rstrip()
 
-        # Worktree header
+        # Worktree header (or any H2/H3 header as context)
         match = WORKTREE_PATTERN.match(line)
         if match:
-            if current:
+            if current and current.tasks:  # Only save if it has tasks
                 worktrees.append(current)
             current = Worktree(name=match.group(1).strip())
             continue
+        
+        # Also catch standard headers as context if no worktree set
+        if line.startswith("#") and not match:
+             # Just a structural header, we could use it as context if we wanted,
+             # but for now let's just stick to the default Main if explicit Worktree missing.
+             pass
 
         # Task line
         match = TASK_PATTERN.match(line)
