@@ -1,5 +1,5 @@
 [project]
-name = "adw"
+name = "adw-cli"
 version = "0.2.1"
 description = "AI Developer Workflow CLI - Orchestrate Claude Code for any project"
 readme = "README.md"
