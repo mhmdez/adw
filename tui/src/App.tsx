@@ -183,16 +183,41 @@ export function App({ cwd }: AppProps) {
 
   return (
     <Box flexDirection="column" height="100%">
-      {/* Header */}
-      <Box>
-        <Text bold>ADW</Text>
-        <Text dimColor> v0.2.0</Text>
+      {/* Header with ASCII Logo */}
+      <Box flexDirection="column">
+        <Text color="cyan" bold>
+          {`█████╗ ██████╗ ██╗    ██╗`}
+        </Text>
+        <Text color="cyan" bold>
+          {`██╔══██╗██╔══██╗██║    ██║`}
+        </Text>
+        <Text color="cyan" bold>
+          {`███████║██║  ██║██║ █╗ ██║`}
+        </Text>
+        <Text color="cyan" bold>
+          {`██╔══██║██║  ██║██║███╗██║`}
+        </Text>
+        <Text color="cyan" bold>
+          {`██║  ██║██████╔╝╚███╔███╔╝`}
+        </Text>
+        <Text color="cyan" bold>
+          {`╚═╝  ╚═╝╚═════╝  ╚══╝╚══╝`}
+        </Text>
+        <Box marginTop={1}>
+          <Text color="magenta" bold>✨ AI Developer Workflow</Text>
+          <Text dimColor> — Ship features while you sleep</Text>
+        </Box>
+      </Box>
+
+      {/* Separator */}
+      <Box marginTop={1}>
+        <Text dimColor>{'─'.repeat(50)}</Text>
       </Box>
 
       {/* Tasks */}
       {tasks.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>TASKS</Text>
+          <Text color="cyan" bold>📋 TASKS</Text>
           <TaskList tasks={tasks} maxItems={5} />
         </Box>
       )}
@@ -202,6 +227,11 @@ export function App({ cwd }: AppProps) {
         <LogView logs={logs} />
       </Box>
 
+      {/* Separator */}
+      <Box>
+        <Text dimColor>{'─'.repeat(50)}</Text>
+      </Box>
+
       {/* Input */}
       <Box marginTop={1}>
         {isThinking ? (
@@ -209,11 +239,11 @@ export function App({ cwd }: AppProps) {
             <Text color="cyan">
               <Spinner type="dots" />
             </Text>
-            <Text dimColor> Thinking...</Text>
+            <Text color="yellow"> Thinking...</Text>
           </Box>
         ) : (
           <Box>
-            <Text color="green">❯ </Text>
+            <Text color="cyan" bold>❯ </Text>
             <TextInput
               value={input}
               onChange={setInput}
@@ -221,7 +251,7 @@ export function App({ cwd }: AppProps) {
               placeholder="Type /help for commands"
             />
             {runningCount > 0 && (
-              <Text dimColor> {runningCount} running</Text>
+              <Text color="green"> ⚡ {runningCount} running</Text>
             )}
           </Box>
         )}
