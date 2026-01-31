@@ -24,6 +24,7 @@ from ..agent.manager import AgentManager
 from ..agent.utils import generate_adw_id
 from ..agent.models import TaskStatus
 from ..specs import SpecLoader, Spec, SpecStatus
+from ..workflow import WorkflowManager, TaskPhase
 from .. import __version__
 
 
@@ -383,6 +384,7 @@ class ADWApp(App):
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
         self.spec_loader = SpecLoader()
+        self.workflow_manager = WorkflowManager()
         self._specs: list[Spec] = []
         self._daemon_running = False
         self._pending_questions: dict[str, tuple[str, AgentQuestion]] = {}
@@ -736,6 +738,67 @@ class ADWApp(App):
         else:
             detail.add_message(f"[red]Failed to block {task.display_id}[/red]")
 
+    async def _start_discussion(self, idea: str) -> None:
+        """Start interactive discussion for a task."""
+        from .widgets.discuss_modal import DiscussModal
+        
+        detail = self.query_one(DetailPanel)
+        detail.add_message(f"[cyan]Starting discussion: {idea}[/cyan]")
+        
+        modal = DiscussModal(idea)
+        result = await self.push_screen_wait(modal)
+        
+        if result and result.get("action") == "approve":
+            await self._create_from_discussion(result)
+        else:
+            detail.add_message("[dim]Discussion cancelled[/dim]")
+
+    async def _create_from_discussion(self, result: dict) -> None:
+        """Create task and spec from discussion result."""
+        detail = self.query_one(DetailPanel)
+        
+        adw_id = generate_adw_id()
+        
+        # Save spec file
+        spec_dir = Path("specs")
+        spec_dir.mkdir(exist_ok=True)
+        spec_file = spec_dir / f"{adw_id[:8]}.md"
+        spec_file.write_text(result["spec"])
+        
+        detail.add_message(f"[green]✓ Saved spec: {spec_file}[/green]")
+        
+        # Save discussion log
+        discuss_dir = Path(".adw/discussions")
+        discuss_dir.mkdir(parents=True, exist_ok=True)
+        discuss_file = discuss_dir / f"{adw_id}.md"
+        
+        discussion_content = f"# Discussion: {result['idea']}\n\n"
+        for msg in result["messages"]:
+            if msg["role"] == "user":
+                discussion_content += f"**User:** {msg['content']}\n\n"
+            elif msg["role"] == "assistant":
+                discussion_content += f"**AI:** {msg['content']}\n\n"
+        discuss_file.write_text(discussion_content)
+        
+        # Create workflow
+        workflow = self.workflow_manager.get_workflow(adw_id)
+        workflow.spec_file = str(spec_file)
+        workflow.discussion_file = str(discuss_file)
+        workflow.transition_to(TaskPhase.SPEC_APPROVED, "Approved during discussion", "human")
+        
+        # Add to tasks.md
+        tasks_file = Path("tasks.md")
+        content = tasks_file.read_text() if tasks_file.exists() else "# Tasks\n\n"
+        content = content.rstrip() + f"\n[🟡, {adw_id}] {result['idea']}\n"
+        tasks_file.write_text(content)
+        
+        detail.add_message(f"[green]✓ Created task {adw_id[:8]}[/green]")
+        detail.add_message("[cyan]Ready to implement! Use /run or /new[/cyan]")
+        
+        self.state.load_from_tasks_md()
+        self._load_specs()
+        self._update_ui()
+
     def _poll_agents(self) -> None:
         """Poll for agent completion."""
         completed = self.agent_manager.poll()
@@ -827,6 +890,11 @@ class ADWApp(App):
             self._unblock_task(args)
         elif cmd == "block":
             self._block_task(args)
+        elif cmd == "discuss":
+            if args:
+                await self._start_discussion(args)
+            else:
+                detail.add_message("[red]Usage: /discuss <task idea>[/red]")
         elif cmd == "version":
             detail.add_message(f"ADW version {__version__}")
         elif cmd == "quit" or cmd == "exit":
