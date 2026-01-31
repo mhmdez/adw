@@ -15,9 +15,11 @@ from textual.reactive import reactive
 from rich.text import Text
 
 from .state import AppState, TaskState
-from .log_watcher import LogWatcher, LogEvent
+from .log_watcher import LogWatcher, LogEvent, QuestionEvent
 from .widgets.task_list import TaskList
 from .widgets.log_viewer import LogViewer
+from .widgets.question_modal import QuestionModal
+from ..protocol.messages import write_answer, AgentQuestion
 from ..agent.manager import AgentManager
 from ..agent.utils import generate_adw_id
 from ..agent.models import TaskStatus
@@ -245,20 +247,38 @@ class StatusLine(Horizontal):
     def __init__(self):
         super().__init__()
         self._running_count = 0
+        self._total_count = 0
+        self._attention: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("❯", id="prompt")
         yield Input(placeholder="Type /help for commands", id="user-input")
         yield Static("", id="status-info")
 
+    def set_attention(self, text: str | None) -> None:
+        """Set attention indicator."""
+        self._attention = text
+        self._update_status_line()
+
     def update_status(self, running: int, total: int) -> None:
         """Update status display."""
         self._running_count = running
+        self._update_status_line(total=total)
+
+    def _update_status_line(self, total: int | None = None) -> None:
         info = self.query_one("#status-info", Static)
-        if running > 0:
-            info.update(f" {running}/{total} running ")
+        if total is not None:
+            self._total_count = total
+
+        if self._running_count > 0:
+            base = f" {self._running_count}/{self._total_count} running "
         else:
-            info.update(f" {total} tasks ")
+            base = f" {self._total_count} tasks "
+
+        if self._attention:
+            info.update(f"[bold yellow]{self._attention}[/] |{base}")
+        else:
+            info.update(base)
 
 
 class ADWApp(App):
@@ -332,10 +352,12 @@ class ADWApp(App):
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
         self._daemon_running = False
+        self._pending_questions: dict[str, tuple[str, AgentQuestion]] = {}
 
         self.state.subscribe(self._on_state_change)
         self.agent_manager.subscribe(self._on_agent_event)
         self.log_watcher.subscribe_all(self._on_log_event)
+        self.log_watcher.subscribe_questions(self._on_question_event)
 
     def compose(self) -> ComposeResult:
         yield Static(f"[bold]ADW[/] [dim]v{__version__}[/]", id="main-header")
@@ -372,6 +394,11 @@ class ADWApp(App):
 
         status = self.query_one(StatusLine)
         status.update_status(self.state.running_count, len(self.state.tasks))
+        if self._pending_questions:
+            count = len(self._pending_questions)
+            status.set_attention(f"❓ {count} question{'s' if count > 1 else ''} pending")
+        else:
+            status.set_attention(None)
 
     def _on_state_change(self, state: AppState) -> None:
         """Handle state changes."""
@@ -407,6 +434,46 @@ class ADWApp(App):
         # Update task activity
         if event.message:
             self.state.update_activity(event.adw_id, event.message[:50])
+
+    def _on_question_event(self, event: QuestionEvent) -> None:
+        """Handle incoming question from agent."""
+        self._pending_questions[event.question.id] = (event.adw_id, event.question)
+        self.call_from_thread(self._show_question_modal, event.adw_id, event.question)
+
+    def _show_question_modal(self, adw_id: str, question: AgentQuestion) -> None:
+        """Show question modal on main thread."""
+        async def show_and_handle():
+            modal = QuestionModal(question, adw_id)
+            answer = await self.push_screen_wait(modal)
+
+            detail = self.query_one(DetailPanel)
+            if answer is not None:
+                write_answer(
+                    adw_id=adw_id,
+                    question_id=question.id,
+                    answer=answer,
+                )
+                detail.add_message(f"[green]✓ Answered: {answer[:50]}...[/green]")
+            else:
+                detail.add_message("[yellow]⏭ Skipped question[/yellow]")
+
+            if question.id in self._pending_questions:
+                del self._pending_questions[question.id]
+
+        asyncio.create_task(show_and_handle())
+
+    def _show_pending_questions(self) -> None:
+        """Show all pending questions."""
+        detail = self.query_one(DetailPanel)
+        if not self._pending_questions:
+            detail.add_message("[dim]No pending questions[/dim]")
+            return
+
+        detail.add_message("[bold]Pending Questions:[/bold]")
+        for _, (adw_id, question) in self._pending_questions.items():
+            detail.add_message(f"  [{adw_id[:8]}] {question.question[:50]}...")
+
+        detail.add_message("[dim]Questions will show as modals. Use /questions to list.[/dim]")
 
     def _poll_agents(self) -> None:
         """Poll for agent completion."""
@@ -483,6 +550,8 @@ class ADWApp(App):
             self._run_daemon()
         elif cmd == "stop":
             self._stop_daemon()
+        elif cmd == "questions":
+            self._show_pending_questions()
         elif cmd == "version":
             detail.add_message(f"ADW version {__version__}")
         elif cmd == "quit" or cmd == "exit":
@@ -504,6 +573,7 @@ class ADWApp(App):
 
 [bold]Chat:[/]
   /ask <question> Ask Claude a question
+  /questions      List pending agent questions
   Just type a question ending with ?
 
 [bold]System:[/]
