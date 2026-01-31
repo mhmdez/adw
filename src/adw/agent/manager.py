@@ -123,14 +123,16 @@ class AgentManager:
         env = os.environ.copy()
         env["ADW_ID"] = adw_id
 
-        with open(output_file, "w") as f:
-            process = subprocess.Popen(
-                cmd,
-                env=env,
-                start_new_session=True,
-                stdout=f,
-                stderr=subprocess.PIPE,
-            )
+        # Open file for stdout - DON'T close it, let subprocess own it
+        stdout_file = open(output_file, "w")
+
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            start_new_session=True,
+            stdout=stdout_file,
+            stderr=subprocess.PIPE,
+        )
 
         agent = AgentProcess(
             adw_id=adw_id,
@@ -138,6 +140,8 @@ class AgentManager:
             process=process,
             task_description=prompt[:50],
         )
+        # Store file handle for later cleanup
+        agent._stdout_file = stdout_file
 
         self._agents[adw_id] = agent
         self.notify("spawned", adw_id, pid=process.pid)
@@ -173,6 +177,13 @@ class AgentManager:
                 if agent.process.stderr:
                     try:
                         stderr_msg = agent.process.stderr.read().decode()[:500]
+                    except Exception:
+                        pass
+
+                # Close stdout file if it exists
+                if hasattr(agent, "_stdout_file") and agent._stdout_file:
+                    try:
+                        agent._stdout_file.close()
                     except Exception:
                         pass
 

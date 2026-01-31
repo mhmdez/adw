@@ -18,7 +18,7 @@ class LogViewer(RichLog):
     LogViewer {
         height: 100%;
         border: none;
-        scrollbar-gutter: stable;
+        scrollbar-size: 0 0;
     }
     """
 

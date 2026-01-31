@@ -43,6 +43,19 @@ class LogWatcher:
         """Subscribe to all logs."""
         self.subscribe("*", callback)
 
+    def watch_agent(self, adw_id: str) -> None:
+        """Start watching a specific agent's logs.
+
+        This creates the output directory and resets position tracking
+        so we capture all new output.
+        """
+        agent_dir = self.agents_dir / adw_id
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        # Reset position for this agent's files so we read from start
+        for f in agent_dir.glob("**/*.jsonl"):
+            self._file_positions[str(f)] = 0
+
     def unsubscribe(self, adw_id: str, callback: Callable) -> None:
         """Unsubscribe from logs."""
         if adw_id in self._subscribers:

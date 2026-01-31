@@ -51,6 +51,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/adw"]
 
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build]
+include = [
+    "src/adw/**/*.py",
+    "src/adw/**/*.js",
+    "src/adw/**/*.mjs",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

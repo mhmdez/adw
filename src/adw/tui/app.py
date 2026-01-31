@@ -1,93 +1,329 @@
-"""Main ADW TUI application - Claude Code style interface."""
+"""Main ADW TUI application - Dashboard with task inbox and observability."""
 
 from __future__ import annotations
 
 import subprocess
-import sys
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, Input, RichLog
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import Static, Input, Footer, Header
+from textual.reactive import reactive
 from rich.text import Text
 
-from .commands import execute_command, TUI_COMMANDS
-from .state import AppState
+from .state import AppState, TaskState
 from .log_watcher import LogWatcher, LogEvent
+from .widgets.task_list import TaskList
+from .widgets.log_viewer import LogViewer
 from ..agent.manager import AgentManager
-from ..agent.task_updater import mark_in_progress
 from ..agent.utils import generate_adw_id
-from ..protocol.messages import write_message, MessagePriority
+from ..agent.models import TaskStatus
 from .. import __version__
 
 
-# Simple header
-LOGO = "[bold cyan]❯❯[/bold cyan] [bold]ADW[/bold] [dim]v{version}[/dim]"
+# Spinner frames
+SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
-class ADWApp(App):
-    """ADW - Claude Code style chat interface."""
+class TaskInbox(Vertical):
+    """Task inbox showing all tasks with live status."""
 
-    CSS = """
-    Screen {
-        background: #1a1a2e;
+    DEFAULT_CSS = """
+    TaskInbox {
+        width: 100%;
+        height: auto;
+        max-height: 10;
+        padding: 0 1;
     }
 
-    #header {
-        dock: top;
+    TaskInbox > #inbox-header {
         height: 1;
-        padding: 0 1;
-        background: #1a1a2e;
-        color: #4fc3f7;
+        color: #888;
     }
 
-    #chat-container {
+    TaskInbox > #task-container {
+        height: auto;
+        max-height: 8;
+    }
+
+    .task-item {
+        height: 1;
+    }
+    """
+
+    spinner_frame = reactive(0)
+
+    def __init__(self):
+        super().__init__()
+        self._tasks: dict[str, TaskState] = {}
+        self._selected_key: str | None = None
+        self._has_running = False
+
+    def compose(self) -> ComposeResult:
+        yield Static("TASKS", id="inbox-header")
+        yield Container(id="task-container")
+
+    def on_mount(self) -> None:
+        self.set_interval(0.1, self._tick_spinner)
+
+    def _tick_spinner(self) -> None:
+        # Only update display if there are running tasks (need spinner animation)
+        if self._has_running:
+            self.spinner_frame = (self.spinner_frame + 1) % len(SPINNER)
+            self._update_display()
+
+    def update_tasks(self, tasks: dict[str, TaskState]) -> None:
+        """Update the task list."""
+        self._tasks = tasks
+        self._has_running = any(t.status == TaskStatus.IN_PROGRESS for t in tasks.values())
+        self._update_display()
+
+    def select_task(self, key: str | None) -> None:
+        """Select a task."""
+        self._selected_key = key
+        self._update_display()
+
+    def _update_display(self) -> None:
+        """Refresh the task display."""
+        container = self.query_one("#task-container", Container)
+        container.remove_children()
+
+        if not self._tasks:
+            container.mount(Static("[dim]No tasks yet. Use /new <task>[/dim]"))
+            return
+
+        # Sort: running first, then pending, then done
+        def sort_key(item):
+            k, t = item
+            order = {
+                TaskStatus.IN_PROGRESS: 0,
+                TaskStatus.PENDING: 1,
+                TaskStatus.BLOCKED: 2,
+                TaskStatus.FAILED: 3,
+                TaskStatus.DONE: 4,
+            }
+            return (order.get(t.status, 5), k)
+
+        for key, task in sorted(self._tasks.items(), key=sort_key):
+            widget = self._make_task_widget(key, task)
+            container.mount(widget)
+
+    def _make_task_widget(self, key: str, task: TaskState) -> Static:
+        """Create a widget for a single task."""
+        text = Text()
+
+        # Status icon with spinner for running
+        if task.status == TaskStatus.IN_PROGRESS:
+            icon = SPINNER[self.spinner_frame]
+            text.append(f" {icon} ", style="bold cyan")
+        elif task.status == TaskStatus.DONE:
+            text.append(" ✓ ", style="bold green")
+        elif task.status == TaskStatus.FAILED:
+            text.append(" ✗ ", style="bold red")
+        elif task.status == TaskStatus.BLOCKED:
+            text.append(" ◷ ", style="bold yellow")
+        else:
+            text.append(" ○ ", style="dim")
+
+        # Task ID
+        text.append(f"{task.display_id} ", style="dim")
+
+        # Description (truncated)
+        desc = task.description[:25]
+        if len(task.description) > 25:
+            desc += "…"
+
+        if task.status == TaskStatus.IN_PROGRESS:
+            text.append(desc, style="cyan")
+            # Show activity inline for running tasks
+            if task.last_activity:
+                text.append(f" - {task.last_activity[:20]}", style="dim italic")
+        elif task.status == TaskStatus.DONE:
+            text.append(desc, style="green")
+        elif task.status == TaskStatus.FAILED:
+            text.append(desc, style="red")
+        else:
+            text.append(desc)
+
+        widget = Static(text, classes="task-item")
+        if key == self._selected_key:
+            widget.add_class("-selected")
+        if task.is_running:
+            widget.add_class("-running")
+
+        return widget
+
+
+class DetailPanel(Vertical):
+    """Bottom panel showing logs and details for selected task."""
+
+    DEFAULT_CSS = """
+    DetailPanel {
+        width: 100%;
         height: 1fr;
         padding: 0 1;
-        background: #1a1a2e;
     }
 
-    #chat-log {
+    DetailPanel > #detail-header {
+        display: none;
+    }
+
+    DetailPanel > #log-viewer {
         height: 1fr;
-        background: #1a1a2e;
-        scrollbar-size: 1 1;
     }
+    """
 
-    #input-container {
+    def __init__(self):
+        super().__init__()
+        self._selected_task: TaskState | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Static("LOGS", id="detail-header")
+        yield LogViewer(id="log-viewer")
+
+    def update_task(self, task: TaskState | None) -> None:
+        """Update the selected task."""
+        self._selected_task = task
+        header = self.query_one("#detail-header", Static)
+        log_viewer = self.query_one("#log-viewer", LogViewer)
+
+        if task:
+            header.update(f"LOGS - {task.display_id}")
+            log_viewer.filter_by_agent(task.adw_id)
+        else:
+            header.update("LOGS")
+            log_viewer.filter_by_agent(None)
+
+    def add_log(self, event: LogEvent) -> None:
+        """Add a log event."""
+        log_viewer = self.query_one("#log-viewer", LogViewer)
+        log_viewer.on_log_event(event)
+
+    def add_message(self, message: str, style: str = "") -> None:
+        """Add a simple message to the log."""
+        log_viewer = self.query_one("#log-viewer", LogViewer)
+        if style:
+            log_viewer.write(Text(message, style=style))
+        else:
+            log_viewer.write(message)
+
+
+class StatusLine(Horizontal):
+    """Bottom status line with input."""
+
+    DEFAULT_CSS = """
+    StatusLine {
         dock: bottom;
         height: 1;
         padding: 0 1;
-        background: #1a1a2e;
     }
 
-    #prompt-symbol {
-        width: 3;
-        color: #4fc3f7;
-        background: #1a1a2e;
+    StatusLine > #prompt {
+        width: 2;
+        color: #4ec9b0;
     }
 
-    #user-input {
+    StatusLine > Input {
         width: 1fr;
-        background: #1a1a2e;
         border: none;
         padding: 0;
     }
 
-    #user-input:focus {
+    StatusLine > Input:focus {
         border: none;
     }
 
-    #user-input > .input--placeholder {
+    StatusLine > #status-info {
+        width: auto;
         color: #666;
     }
     """
 
+    def __init__(self):
+        super().__init__()
+        self._running_count = 0
+
+    def compose(self) -> ComposeResult:
+        yield Static("❯", id="prompt")
+        yield Input(placeholder="Type /help for commands", id="user-input")
+        yield Static("", id="status-info")
+
+    def update_status(self, running: int, total: int) -> None:
+        """Update status display."""
+        self._running_count = running
+        info = self.query_one("#status-info", Static)
+        if running > 0:
+            info.update(f" {running}/{total} running ")
+        else:
+            info.update(f" {total} tasks ")
+
+
+class ADWApp(App):
+    """ADW - AI Developer Workflow Dashboard."""
+
+    ENABLE_COMMAND_PALETTE = False
+    DESIGN_SYSTEM = ""  # Disable design system for terminal-native look
+
+    CSS = """
+    * {
+        scrollbar-size: 0 0;
+    }
+
+    Screen {
+        background: ansi_default;
+    }
+
+    #main-header {
+        dock: top;
+        height: 1;
+        padding: 0 1;
+    }
+
+    #main-container {
+        height: 1fr;
+    }
+
+    Input {
+        border: none;
+        background: ansi_default;
+    }
+
+    Input:focus {
+        border: none;
+    }
+
+    Static {
+        background: ansi_default;
+    }
+
+    Container {
+        background: ansi_default;
+    }
+
+    Vertical {
+        background: ansi_default;
+    }
+
+    Horizontal {
+        background: ansi_default;
+    }
+
+    RichLog {
+        background: ansi_default;
+    }
+    """
+
     BINDINGS = [
-        Binding("ctrl+c", "quit", "Quit", show=False),
-        Binding("ctrl+l", "clear", "Clear", show=False),
+        Binding("ctrl+c", "quit", "Quit"),
+        Binding("ctrl+l", "clear_logs", "Clear"),
+        Binding("n", "new_task", "New Task", show=False),
+        Binding("r", "refresh", "Refresh", show=False),
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("?", "help", "Help", show=False),
+        Binding("tab", "focus_next", "Next Panel", show=False),
     ]
 
     def __init__(self):
@@ -95,7 +331,6 @@ class ADWApp(App):
         self.state = AppState()
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
-        self._new_task_mode = False
         self._daemon_running = False
 
         self.state.subscribe(self._on_state_change)
@@ -103,18 +338,13 @@ class ADWApp(App):
         self.log_watcher.subscribe_all(self._on_log_event)
 
     def compose(self) -> ComposeResult:
-        """Create the UI layout."""
-        # Header with logo
-        yield Static(LOGO.format(version=__version__), id="header")
+        yield Static(f"[bold]ADW[/] [dim]v{__version__}[/]", id="main-header")
 
-        # Main chat area
-        with Container(id="chat-container"):
-            yield RichLog(id="chat-log", highlight=True, markup=True)
+        with Vertical(id="main-container"):
+            yield TaskInbox()
+            yield DetailPanel()
 
-        # Input area - clean like Claude Code
-        with Horizontal(id="input-container"):
-            yield Static("❯", id="prompt-symbol")
-            yield Input(placeholder="", id="user-input")
+        yield StatusLine()
 
     async def on_mount(self) -> None:
         """Initialize on mount."""
@@ -123,87 +353,60 @@ class ADWApp(App):
         self.run_worker(self.log_watcher.watch())
 
         # Welcome message
-        self._log_system("Welcome to ADW - AI Developer Workflow")
-        self._log_system("Type [bold]/help[/bold] for available commands")
-        self._log_system("")
-
-        # Show current tasks
-        self._show_tasks()
+        detail = self.query_one(DetailPanel)
+        detail.add_message("Welcome to ADW - AI Developer Workflow", "bold cyan")
+        detail.add_message("Type /help for commands, /new <task> to create a task", "dim")
+        detail.add_message("")
 
         # Focus input
         self.query_one("#user-input", Input).focus()
 
-    def _log_system(self, message: str) -> None:
-        """Log a system message."""
-        log = self.query_one("#chat-log", RichLog)
-        log.write(Text.from_markup(f"[dim]{message}[/dim]"))
+        # Initial UI update
+        self._update_ui()
 
-    def _log_user(self, message: str) -> None:
-        """Log a user message."""
-        log = self.query_one("#chat-log", RichLog)
-        log.write(Text.from_markup(f"[bold green]>[/bold green] {message}"))
+    def _update_ui(self) -> None:
+        """Update all UI components."""
+        inbox = self.query_one(TaskInbox)
+        inbox.update_tasks(self.state.tasks)
+        inbox.select_task(self.state.selected_task_id)
 
-    def _log_response(self, message: str) -> None:
-        """Log a response message."""
-        log = self.query_one("#chat-log", RichLog)
-        log.write(Text.from_markup(message))
-
-    def _log_error(self, message: str) -> None:
-        """Log an error message."""
-        log = self.query_one("#chat-log", RichLog)
-        log.write(Text.from_markup(f"[bold red]Error:[/bold red] {message}"))
-
-    def _show_tasks(self) -> None:
-        """Show current tasks."""
-        if not self.state.tasks:
-            self._log_system("No tasks. Create one with [bold]/new <description>[/bold]")
-            return
-
-        self._log_system(f"[bold]Tasks ({len(self.state.tasks)}):[/bold]")
-        for key, task in self.state.tasks.items():
-            status_icon = {
-                "pending": "⏳",
-                "in_progress": "🟡",
-                "done": "✅",
-                "blocked": "⏰",
-                "failed": "❌",
-            }.get(task.status.value, "○")
-            self._log_system(f"  {status_icon} [{task.display_id}] {task.description[:50]}")
+        status = self.query_one(StatusLine)
+        status.update_status(self.state.running_count, len(self.state.tasks))
 
     def _on_state_change(self, state: AppState) -> None:
         """Handle state changes."""
-        pass  # We update UI reactively via commands
+        self._update_ui()
 
     def _on_agent_event(self, event: str, adw_id: str, data: dict) -> None:
         """Handle agent events."""
+        detail = self.query_one(DetailPanel)
+
         if event == "spawned":
-            self._log_response(f"[cyan]Agent {adw_id[:8]} started[/cyan]")
+            detail.add_message(f"[cyan]▶ Agent {adw_id[:8]} started[/cyan]")
+            # Update task activity
+            self.state.update_activity(adw_id, "Starting...")
         elif event == "completed":
-            self._log_response(f"[green]Agent {adw_id[:8]} completed[/green]")
+            detail.add_message(f"[green]✓ Agent {adw_id[:8]} completed[/green]")
             self.state.load_from_tasks_md()
         elif event == "failed":
             return_code = data.get("return_code", "?")
             stderr = data.get("stderr", "")
-            self._log_error(f"Agent {adw_id[:8]} failed (exit code: {return_code})")
+            detail.add_message(f"[red]✗ Agent {adw_id[:8]} failed (exit {return_code})[/red]")
             if stderr:
                 for line in stderr.strip().split("\n")[:5]:
-                    self._log_error(f"  {line}")
+                    detail.add_message(f"  {line}", "dim red")
             self.state.load_from_tasks_md()
         elif event == "killed":
-            self._log_response(f"[yellow]Agent {adw_id[:8]} killed[/yellow]")
+            detail.add_message(f"[yellow]■ Agent {adw_id[:8]} killed[/yellow]")
 
     def _on_log_event(self, event: LogEvent) -> None:
         """Handle log event from agents."""
-        icon = {
-            "assistant": "💬",
-            "tool": "🔧",
-            "tool_result": "✓",
-            "result": "✅",
-            "error": "❌",
-        }.get(event.event_type, "•")
+        detail = self.query_one(DetailPanel)
+        detail.add_log(event)
 
-        msg = event.message[:80] if event.message else ""
-        self._log_response(f"[dim]{icon} [{event.adw_id[:8]}] {msg}[/dim]")
+        # Update task activity
+        if event.message:
+            self.state.update_activity(event.adw_id, event.message[:50])
 
     def _poll_agents(self) -> None:
         """Poll for agent completion."""
@@ -221,580 +424,134 @@ class ADWApp(App):
             return
 
         event.input.value = ""
-        self._log_user(message)
+        detail = self.query_one(DetailPanel)
+
+        # Show user input
+        detail.add_message(f"[bold]> {message}[/bold]")
 
         # Handle slash commands
         if message.startswith("/"):
-            self._handle_command(message)
+            await self._handle_command(message)
             return
 
-        # Detect if it's a question or a task
-        # Questions typically start with question words or end with ?
-        question_starters = ("what", "how", "why", "where", "when", "who", "which", "can", "could", "would", "is", "are", "do", "does", "explain", "describe", "tell", "show")
-        is_question = (
-            message.endswith("?") or
-            message.lower().startswith(question_starters)
-        )
+        # Detect question vs task
+        question_starters = ("what", "how", "why", "where", "when", "who", "which",
+                           "can", "could", "would", "is", "are", "do", "does",
+                           "explain", "describe", "tell", "show")
+        is_question = message.endswith("?") or message.lower().startswith(question_starters)
 
         if is_question:
-            self._ask_question(message)
+            await self._ask_question(message)
         else:
-            self._log_response("Creating task and spawning agent...")
-            self._log_response("[dim]Tip: Use /ask for questions, or /do to explicitly create a task[/dim]")
+            detail.add_message("[dim]Creating task...[/dim]")
             self._spawn_task(message)
 
-    def _handle_command(self, text: str) -> None:
+    async def _handle_command(self, text: str) -> None:
         """Handle a slash command."""
         parts = text[1:].split(maxsplit=1)
         cmd = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
+        detail = self.query_one(DetailPanel)
 
-        # Core commands
         if cmd == "help":
             self._show_help()
-        elif cmd == "init":
-            self._run_init()
-        elif cmd == "tasks" or cmd == "list":
-            self.state.load_from_tasks_md()
-            self._show_tasks()
-        elif cmd == "new":
+        elif cmd == "new" or cmd == "do" or cmd == "task":
             if args:
                 self._spawn_task(args)
             else:
-                self._log_error("Usage: /new <task description>")
+                detail.add_message("[red]Usage: /new <task description>[/red]")
+        elif cmd == "ask":
+            if args:
+                await self._ask_question(args)
+            else:
+                detail.add_message("[red]Usage: /ask <question>[/red]")
+        elif cmd == "tasks" or cmd == "list":
+            self.state.load_from_tasks_md()
+            detail.add_message(f"[cyan]Loaded {len(self.state.tasks)} tasks[/cyan]")
         elif cmd == "status":
             self._show_status()
         elif cmd == "clear":
-            self.query_one("#chat-log", RichLog).clear()
-        elif cmd == "version":
-            self._log_response(f"ADW version {__version__}")
-        elif cmd == "update":
-            self._run_update()
-        elif cmd == "quit" or cmd == "exit":
-            self.exit()
-        # New commands
+            log_viewer = self.query_one("#log-viewer", LogViewer)
+            log_viewer.clear_logs()
+        elif cmd == "kill":
+            self._kill_agent(args)
+        elif cmd == "init":
+            self._run_init()
         elif cmd == "doctor":
             self._run_doctor()
-        elif cmd == "verify":
-            self._run_verify(args)
-        elif cmd == "approve":
-            self._run_approve(args)
         elif cmd == "run":
-            self._run_daemon(args)
+            self._run_daemon()
         elif cmd == "stop":
             self._stop_daemon()
-        elif cmd == "worktree":
-            self._run_worktree(args)
-        elif cmd == "github":
-            self._run_github(args)
-        elif cmd == "ask":
-            if args:
-                self._ask_question(args)
-            else:
-                self._log_error("Usage: /ask <question>")
-        elif cmd == "do" or cmd == "task":
-            if args:
-                self._spawn_task(args)
-            else:
-                self._log_error("Usage: /do <task description>")
+        elif cmd == "version":
+            detail.add_message(f"ADW version {__version__}")
+        elif cmd == "quit" or cmd == "exit":
+            self.exit()
         else:
-            self._log_error(f"Unknown command: /{cmd}. Type /help for commands.")
+            detail.add_message(f"[yellow]Unknown command: /{cmd}[/yellow]")
+            detail.add_message("[dim]Type /help for available commands[/dim]")
 
     def _show_help(self) -> None:
-        """Show help message."""
-        self._log_response("[bold]Commands:[/bold]")
-        self._log_response("")
-        self._log_response("[cyan]Setup & Info:[/cyan]")
-        self._log_response("  /init          - Initialize ADW in current project")
-        self._log_response("  /doctor        - Check installation health")
-        self._log_response("  /status        - Show system status")
-        self._log_response("  /version       - Show version")
-        self._log_response("  /update        - Check for updates")
-        self._log_response("")
-        self._log_response("[cyan]Chat:[/cyan]")
-        self._log_response("  /ask <question>- Ask Claude a question")
-        self._log_response("")
-        self._log_response("[cyan]Tasks:[/cyan]")
-        self._log_response("  /do <desc>     - Create task and spawn agent")
-        self._log_response("  /new <desc>    - Same as /do")
-        self._log_response("  /tasks         - List all tasks")
-        self._log_response("  /verify [id]   - Verify completed task")
-        self._log_response("  /approve [spec]- Approve spec, create tasks")
-        self._log_response("")
-        self._log_response("[cyan]Automation:[/cyan]")
-        self._log_response("  /run           - Start autonomous daemon")
-        self._log_response("  /stop          - Stop daemon")
-        self._log_response("")
-        self._log_response("[cyan]Worktrees:[/cyan]")
-        self._log_response("  /worktree list          - List worktrees")
-        self._log_response("  /worktree create <name> - Create worktree")
-        self._log_response("  /worktree remove <name> - Remove worktree")
-        self._log_response("")
-        self._log_response("[cyan]GitHub:[/cyan]")
-        self._log_response("  /github watch           - Watch issues")
-        self._log_response("  /github process <num>   - Process issue")
-        self._log_response("")
-        self._log_response("[cyan]Other:[/cyan]")
-        self._log_response("  /clear         - Clear screen")
-        self._log_response("  /quit          - Exit ADW")
-        self._log_response("")
-        self._log_response("[dim]Or just type: questions get answered, tasks get executed[/dim]")
+        """Show help."""
+        detail = self.query_one(DetailPanel)
+        help_text = """
+[bold cyan]Commands:[/]
+
+[bold]Tasks:[/]
+  /new <desc>     Create and run a task
+  /tasks          Refresh task list
+  /kill [id]      Kill running agent
+
+[bold]Chat:[/]
+  /ask <question> Ask Claude a question
+  Just type a question ending with ?
+
+[bold]System:[/]
+  /init           Initialize ADW in project
+  /doctor         Check installation health
+  /status         Show system status
+  /run            Start autonomous daemon
+  /stop           Stop daemon
+
+[bold]Other:[/]
+  /clear          Clear logs
+  /version        Show version
+  /quit           Exit
+
+[bold]Keyboard:[/]
+  n       New task
+  r       Refresh
+  Tab     Switch panels
+  ?       This help
+  Ctrl+C  Quit
+"""
+        for line in help_text.strip().split("\n"):
+            detail.add_message(line)
 
     def _show_status(self) -> None:
         """Show status."""
+        detail = self.query_one(DetailPanel)
         total = len(self.state.tasks)
         running = self.state.running_count
-        pending = sum(1 for t in self.state.tasks.values() if t.status.value == "pending")
-        done = sum(1 for t in self.state.tasks.values() if t.status.value == "done")
+        pending = sum(1 for t in self.state.tasks.values() if t.status == TaskStatus.PENDING)
+        done = sum(1 for t in self.state.tasks.values() if t.status == TaskStatus.DONE)
+        failed = sum(1 for t in self.state.tasks.values() if t.status == TaskStatus.FAILED)
 
-        self._log_response("[bold]Status:[/bold]")
-        self._log_response(f"  Version: {__version__}")
-        self._log_response(f"  Tasks: {total} total")
-        self._log_response(f"    ⏳ Pending: {pending}")
-        self._log_response(f"    🟡 Running: {running}")
-        self._log_response(f"    ✅ Done: {done}")
-        self._log_response(f"  Daemon: {'[green]running[/green]' if self._daemon_running else '[dim]stopped[/dim]'}")
-
-    def _run_update(self) -> None:
-        """Check for updates."""
-        from ..update import check_for_update
-
-        self._log_response("Checking for updates...")
-        current, latest = check_for_update()
-
-        if latest is None:
-            self._log_error("Could not check for updates")
-            return
-
-        if latest <= current:
-            self._log_response(f"Already at latest version ({current})")
-        else:
-            self._log_response(f"Update available: {current} → {latest}")
-            self._log_response("Run: uv tool upgrade adw")
-
-    def _run_init(self) -> None:
-        """Initialize ADW in current project."""
-        from ..init import init_project
-
-        self._log_response("Initializing ADW in current project...")
-
-        try:
-            result = init_project(Path.cwd(), force=False)
-
-            if result["created"]:
-                self._log_response("[green]Created:[/green]")
-                for path in result["created"]:
-                    self._log_response(f"  + {path}")
-
-            if result["updated"]:
-                self._log_response("[cyan]Updated:[/cyan]")
-                for path in result["updated"]:
-                    self._log_response(f"  ~ {path}")
-
-            if result["skipped"]:
-                self._log_response("[dim]Skipped (already exist):[/dim]")
-                for path in result["skipped"]:
-                    self._log_response(f"  - {path}")
-
-            self._log_response("")
-            self._log_response("[green]ADW initialized![/green] Run /new <task> to get started.")
-
-            # Reload tasks
-            self.state.load_from_tasks_md()
-
-        except Exception as e:
-            self._log_error(f"Init failed: {e}")
-
-    def _run_doctor(self) -> None:
-        """Check installation health."""
-        self._log_response("[bold]ADW Health Check[/bold]")
-        self._log_response("")
-
-        # Check ADW version
-        self._log_response(f"[green]✓[/green] ADW version: {__version__}")
-
-        # Check Claude Code
-        try:
-            result = subprocess.run(
-                ["claude", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                version = result.stdout.strip() or "installed"
-                self._log_response(f"[green]✓[/green] Claude Code: {version}")
-            else:
-                self._log_response("[red]✗[/red] Claude Code: not working")
-        except FileNotFoundError:
-            self._log_response("[red]✗[/red] Claude Code: not installed")
-            self._log_response("  Install: npm install -g @anthropic-ai/claude-code")
-        except Exception as e:
-            self._log_response(f"[yellow]?[/yellow] Claude Code: {e}")
-
-        # Check project files
-        cwd = Path.cwd()
-
-        if (cwd / "CLAUDE.md").exists():
-            self._log_response("[green]✓[/green] CLAUDE.md exists")
-        else:
-            self._log_response("[yellow]![/yellow] CLAUDE.md missing (run /init)")
-
-        if (cwd / "tasks.md").exists():
-            self._log_response("[green]✓[/green] tasks.md exists")
-        else:
-            self._log_response("[yellow]![/yellow] tasks.md missing (run /init)")
-
-        if (cwd / ".claude" / "commands").exists():
-            self._log_response("[green]✓[/green] .claude/commands/ exists")
-        else:
-            self._log_response("[yellow]![/yellow] .claude/commands/ missing (run /init)")
-
-        # Check git
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                self._log_response("[green]✓[/green] Git repository detected")
-            else:
-                self._log_response("[yellow]![/yellow] Not a git repository")
-        except Exception:
-            self._log_response("[yellow]?[/yellow] Could not check git")
-
-    def _run_verify(self, args: str) -> None:
-        """Verify a completed task."""
-        task_id = args.strip() if args else None
-
-        # Find tasks to verify (done status)
-        done_tasks = [
-            t for t in self.state.tasks.values()
-            if t.status.value == "done"
-        ]
-
-        if not done_tasks:
-            self._log_response("No completed tasks to verify.")
-            return
-
-        if task_id:
-            # Find specific task
-            task = None
-            for t in done_tasks:
-                if t.adw_id and t.adw_id.startswith(task_id):
-                    task = t
-                    break
-            if not task:
-                self._log_error(f"Task {task_id} not found or not completed")
-                return
-            self._log_response(f"Opening Claude Code to verify task {task.display_id}...")
-            self._log_response(f"  {task.description[:60]}")
-        else:
-            # Show list
-            self._log_response("[bold]Completed tasks to verify:[/bold]")
-            for t in done_tasks:
-                self._log_response(f"  ✅ [{t.display_id}] {t.description[:50]}")
-            self._log_response("")
-            self._log_response("Run /verify <task_id> to verify a specific task")
-
-    def _run_approve(self, args: str) -> None:
-        """Approve a pending spec."""
-        spec_name = args.strip() if args else None
-        specs_dir = Path.cwd() / "specs"
-
-        if not specs_dir.exists():
-            self._log_response("No specs/ directory found. Run /init first.")
-            return
-
-        # Find pending specs
-        specs = list(specs_dir.glob("*.md"))
-        if not specs:
-            self._log_response("No specs found in specs/ directory.")
-            return
-
-        if spec_name:
-            # Find specific spec
-            spec_path = specs_dir / f"{spec_name}.md"
-            if not spec_path.exists():
-                spec_path = specs_dir / spec_name
-            if not spec_path.exists():
-                self._log_error(f"Spec '{spec_name}' not found")
-                return
-            self._log_response(f"Opening Claude Code to approve spec: {spec_path.name}")
-        else:
-            # Show list
-            self._log_response("[bold]Available specs:[/bold]")
-            for spec in specs:
-                self._log_response(f"  📄 {spec.name}")
-            self._log_response("")
-            self._log_response("Run /approve <spec_name> to approve a specific spec")
-
-    def _run_daemon(self, args: str) -> None:
-        """Start autonomous daemon."""
-        if self._daemon_running:
-            self._log_response("Daemon is already running. Use /stop to stop it.")
-            return
-
-        self._log_response("[cyan]Starting autonomous daemon...[/cyan]")
-        self._log_response("  Monitoring tasks.md for eligible tasks")
-        self._log_response("  Press /stop to stop the daemon")
-        self._log_response("")
-
-        # Parse args for options
-        max_concurrent = 3
-        poll_interval = 5.0
-
-        if args:
-            parts = args.split()
-            for i, part in enumerate(parts):
-                if part in ("-m", "--max") and i + 1 < len(parts):
-                    try:
-                        max_concurrent = int(parts[i + 1])
-                    except ValueError:
-                        pass
-                elif part in ("-p", "--poll") and i + 1 < len(parts):
-                    try:
-                        poll_interval = float(parts[i + 1])
-                    except ValueError:
-                        pass
-
-        self._log_response(f"  Max concurrent: {max_concurrent}")
-        self._log_response(f"  Poll interval: {poll_interval}s")
-
-        self._daemon_running = True
-
-        # Start daemon polling
-        self.set_interval(poll_interval, self._daemon_tick)
-        self._log_response("[green]Daemon started[/green]")
-
-    def _daemon_tick(self) -> None:
-        """Daemon tick - check for eligible tasks."""
-        if not self._daemon_running:
-            return
-
-        self.state.load_from_tasks_md()
-
-        # Find eligible tasks (pending, not blocked)
-        eligible = [
-            t for t in self.state.tasks.values()
-            if t.status.value == "pending"
-        ]
-
-        if eligible and self.state.running_count < 3:
-            task = eligible[0]
-            self._log_response(f"[cyan]Daemon: spawning agent for {task.display_id}[/cyan]")
-            self._spawn_task(task.description)
-
-    def _stop_daemon(self) -> None:
-        """Stop the daemon."""
-        if not self._daemon_running:
-            self._log_response("Daemon is not running.")
-            return
-
-        self._daemon_running = False
-        self._log_response("[yellow]Daemon stopped[/yellow]")
-
-    def _run_worktree(self, args: str) -> None:
-        """Manage git worktrees."""
-        parts = args.strip().split(maxsplit=1) if args else []
-        subcmd = parts[0].lower() if parts else "list"
-        subargs = parts[1] if len(parts) > 1 else ""
-
-        if subcmd == "list":
-            self._worktree_list()
-        elif subcmd == "create":
-            if subargs:
-                self._worktree_create(subargs)
-            else:
-                self._log_error("Usage: /worktree create <name>")
-        elif subcmd == "remove" or subcmd == "rm":
-            if subargs:
-                self._worktree_remove(subargs)
-            else:
-                self._log_error("Usage: /worktree remove <name>")
-        else:
-            self._log_error(f"Unknown worktree command: {subcmd}")
-            self._log_response("Usage: /worktree [list|create|remove] [name]")
-
-    def _worktree_list(self) -> None:
-        """List git worktrees."""
-        try:
-            result = subprocess.run(
-                ["git", "worktree", "list"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0:
-                self._log_response("[bold]Git Worktrees:[/bold]")
-                for line in result.stdout.strip().split("\n"):
-                    if line:
-                        self._log_response(f"  {line}")
-            else:
-                self._log_error("Failed to list worktrees")
-        except Exception as e:
-            self._log_error(f"Failed to list worktrees: {e}")
-
-    def _worktree_create(self, name: str) -> None:
-        """Create a git worktree."""
-        worktree_path = Path.cwd().parent / f"worktrees/{name}"
-
-        try:
-            # Create branch and worktree
-            result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), "-b", name],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.returncode == 0:
-                self._log_response(f"[green]Created worktree:[/green] {worktree_path}")
-            else:
-                # Try without -b if branch exists
-                result = subprocess.run(
-                    ["git", "worktree", "add", str(worktree_path), name],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                if result.returncode == 0:
-                    self._log_response(f"[green]Created worktree:[/green] {worktree_path}")
-                else:
-                    self._log_error(f"Failed: {result.stderr}")
-        except Exception as e:
-            self._log_error(f"Failed to create worktree: {e}")
-
-    def _worktree_remove(self, name: str) -> None:
-        """Remove a git worktree."""
-        try:
-            result = subprocess.run(
-                ["git", "worktree", "remove", name, "--force"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.returncode == 0:
-                self._log_response(f"[green]Removed worktree:[/green] {name}")
-            else:
-                self._log_error(f"Failed: {result.stderr}")
-        except Exception as e:
-            self._log_error(f"Failed to remove worktree: {e}")
-
-    def _run_github(self, args: str) -> None:
-        """GitHub integration commands."""
-        parts = args.strip().split(maxsplit=1) if args else []
-        subcmd = parts[0].lower() if parts else ""
-        subargs = parts[1] if len(parts) > 1 else ""
-
-        if subcmd == "watch":
-            self._github_watch()
-        elif subcmd == "process":
-            if subargs:
-                self._github_process(subargs)
-            else:
-                self._log_error("Usage: /github process <issue_number>")
-        else:
-            self._log_response("[bold]GitHub Commands:[/bold]")
-            self._log_response("  /github watch          - Watch for new issues")
-            self._log_response("  /github process <num>  - Process specific issue")
-
-    def _github_watch(self) -> None:
-        """Watch GitHub issues."""
-        self._log_response("[cyan]Starting GitHub issue watcher...[/cyan]")
-        self._log_response("  This will poll for new issues and create tasks")
-        self._log_response("")
-        self._log_response("[yellow]Note:[/yellow] GitHub watching runs in background.")
-        self._log_response("Configure with GITHUB_TOKEN environment variable.")
-
-    def _ask_question(self, question: str) -> None:
-        """Ask Claude a question and display the response."""
-        self._log_response("[dim]Thinking... (this may take a moment)[/dim]")
-        # Run in background worker to not block TUI
-        self.run_worker(self._ask_question_async(question))
-
-    async def _ask_question_async(self, question: str) -> None:
-        """Async worker to ask Claude a question."""
-        import asyncio
-
-        try:
-            # Use Claude CLI to answer the question
-            # Include project context if CLAUDE.md exists
-            context = ""
-            claude_md = Path.cwd() / "CLAUDE.md"
-            if claude_md.exists():
-                try:
-                    context = f"Project context from CLAUDE.md:\n{claude_md.read_text()[:2000]}\n\n"
-                except Exception:
-                    pass
-
-            prompt = f"{context}Question: {question}\n\nProvide a concise, helpful answer."
-
-            # Run subprocess asynchronously
-            process = await asyncio.create_subprocess_exec(
-                "claude", "--print", prompt,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=120.0
-                )
-
-                if process.returncode == 0 and stdout:
-                    response = stdout.decode().strip()
-                    for line in response.split("\n"):
-                        self._log_response(line)
-                else:
-                    self._log_error("Failed to get response from Claude")
-                    if stderr:
-                        self._log_error(f"  {stderr.decode()[:200]}")
-
-            except asyncio.TimeoutError:
-                process.kill()
-                self._log_error("Request timed out (120s)")
-
-        except FileNotFoundError:
-            self._log_error("Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code")
-        except Exception as e:
-            self._log_error(f"Error: {e}")
-
-    def _github_process(self, issue_num: str) -> None:
-        """Process a GitHub issue."""
-        try:
-            num = int(issue_num)
-            self._log_response(f"[cyan]Processing GitHub issue #{num}...[/cyan]")
-
-            # Try to fetch issue info
-            try:
-                result = subprocess.run(
-                    ["gh", "issue", "view", str(num), "--json", "title,body"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if result.returncode == 0:
-                    import json
-                    data = json.loads(result.stdout)
-                    title = data.get("title", "")
-                    self._log_response(f"  Title: {title}")
-                    self._log_response(f"  Creating task from issue...")
-                    self._spawn_task(f"[GitHub #{num}] {title}")
-                else:
-                    self._log_error("Failed to fetch issue. Is 'gh' CLI installed?")
-            except FileNotFoundError:
-                self._log_error("GitHub CLI (gh) not installed")
-                self._log_response("Install: https://cli.github.com/")
-        except ValueError:
-            self._log_error(f"Invalid issue number: {issue_num}")
+        detail.add_message(f"[bold]Status[/]")
+        detail.add_message(f"  Version: {__version__}")
+        detail.add_message(f"  Tasks: {total} total")
+        detail.add_message(f"    ○ Pending: {pending}")
+        detail.add_message(f"    ◉ Running: {running}")
+        detail.add_message(f"    ✓ Done: {done}")
+        if failed:
+            detail.add_message(f"    ✗ Failed: {failed}")
+        detail.add_message(f"  Daemon: {'[green]running[/]' if self._daemon_running else '[dim]stopped[/]'}")
 
     def _spawn_task(self, description: str) -> None:
         """Spawn a new task."""
         adw_id = generate_adw_id()
         tasks_file = Path("tasks.md")
+        detail = self.query_one(DetailPanel)
 
         # Add task to tasks.md
         if tasks_file.exists():
@@ -805,39 +562,201 @@ class ADWApp(App):
         content = content.rstrip() + f"\n[🟡, {adw_id}] {description}\n"
         tasks_file.write_text(content)
 
-        self._log_response(f"[cyan]Task {adw_id[:8]} created[/cyan]")
+        detail.add_message(f"[cyan]Task {adw_id[:8]} created[/cyan]")
 
-        # Create agents directory for logging
+        # Create agents directory
         agents_dir = Path("agents") / adw_id
         agents_dir.mkdir(parents=True, exist_ok=True)
 
+        # Watch this agent's logs
+        self.log_watcher.watch_agent(adw_id)
+
         # Spawn agent
         try:
-            self.agent_manager.spawn_workflow(
-                task_description=description,
-                worktree_name=f"task-{adw_id}",
-                workflow="standard",
-                model="sonnet",
+            self.agent_manager.spawn_prompt(
+                prompt=f"Task ID: {adw_id}\n\nPlease complete this task:\n\n{description}\n\nWork in the current directory. When done, summarize what you accomplished.",
                 adw_id=adw_id,
+                model="sonnet",
             )
-            self._log_response(f"[cyan]Agent spawned for task {adw_id[:8]}[/cyan]")
-            self._log_response(f"[dim]Logs: agents/{adw_id}/[/dim]")
+            detail.add_message(f"[cyan]Agent spawned - watching logs...[/cyan]")
+
+            # Select this task
+            self.state.load_from_tasks_md()
+            self.state.select_task(adw_id)
+
         except Exception as e:
-            self._log_error(f"Failed to spawn agent: {e}")
+            detail.add_message(f"[red]Failed to spawn agent: {e}[/red]")
+
+    def _kill_agent(self, args: str) -> None:
+        """Kill an agent."""
+        detail = self.query_one(DetailPanel)
+
+        if args:
+            adw_id = args.strip()
+        elif self.state.selected_task and self.state.selected_task.is_running:
+            adw_id = self.state.selected_task.adw_id
+        else:
+            detail.add_message("[yellow]No running task selected. Use /kill <id>[/yellow]")
+            return
+
+        success = self.agent_manager.kill(adw_id)
+        if success:
+            detail.add_message(f"[yellow]Killed agent {adw_id[:8]}[/yellow]")
+            self.state.load_from_tasks_md()
+        else:
+            detail.add_message(f"[red]Agent {adw_id[:8]} not found or not running[/red]")
+
+    async def _ask_question(self, question: str) -> None:
+        """Ask Claude a question."""
+        detail = self.query_one(DetailPanel)
+        detail.add_message("[dim]Thinking...[/dim]")
+
+        try:
+            # Include project context
+            context = ""
+            claude_md = Path.cwd() / "CLAUDE.md"
+            if claude_md.exists():
+                try:
+                    context = f"Project context:\n{claude_md.read_text()[:2000]}\n\n"
+                except Exception:
+                    pass
+
+            prompt = f"{context}Question: {question}\n\nProvide a concise, helpful answer."
+
+            process = await asyncio.create_subprocess_exec(
+                "claude", "--print", prompt,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120.0)
+
+            if process.returncode == 0 and stdout:
+                response = stdout.decode().strip()
+                for line in response.split("\n"):
+                    detail.add_message(line)
+            else:
+                detail.add_message("[red]Failed to get response[/red]")
+                if stderr:
+                    detail.add_message(f"[dim]{stderr.decode()[:200]}[/dim]")
+
+        except asyncio.TimeoutError:
+            detail.add_message("[red]Request timed out[/red]")
+        except FileNotFoundError:
+            detail.add_message("[red]Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code[/red]")
+        except Exception as e:
+            detail.add_message(f"[red]Error: {e}[/red]")
+
+    def _run_init(self) -> None:
+        """Initialize ADW in project."""
+        detail = self.query_one(DetailPanel)
+
+        try:
+            from ..init import init_project
+            result = init_project(Path.cwd(), force=False)
+
+            if result["created"]:
+                detail.add_message("[green]Created:[/green]")
+                for path in result["created"]:
+                    detail.add_message(f"  + {path}")
+
+            if result["skipped"]:
+                detail.add_message("[dim]Already exists:[/dim]")
+                for path in result["skipped"]:
+                    detail.add_message(f"  - {path}")
+
+            detail.add_message("[green]ADW initialized![/green]")
+            self.state.load_from_tasks_md()
+
+        except Exception as e:
+            detail.add_message(f"[red]Init failed: {e}[/red]")
+
+    def _run_doctor(self) -> None:
+        """Check installation health."""
+        detail = self.query_one(DetailPanel)
+        detail.add_message("[bold]Health Check[/bold]")
+
+        # Check Claude Code
+        try:
+            result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                detail.add_message(f"[green]✓[/green] Claude Code: {result.stdout.strip()}")
+            else:
+                detail.add_message("[red]✗[/red] Claude Code: not working")
+        except FileNotFoundError:
+            detail.add_message("[red]✗[/red] Claude Code: not installed")
+        except Exception as e:
+            detail.add_message(f"[yellow]?[/yellow] Claude Code: {e}")
+
+        # Check project files
+        cwd = Path.cwd()
+        for file, desc in [("CLAUDE.md", "Project config"), ("tasks.md", "Task file")]:
+            if (cwd / file).exists():
+                detail.add_message(f"[green]✓[/green] {file}")
+            else:
+                detail.add_message(f"[yellow]![/yellow] {file} missing (run /init)")
+
+    def _run_daemon(self) -> None:
+        """Start autonomous daemon."""
+        detail = self.query_one(DetailPanel)
+
+        if self._daemon_running:
+            detail.add_message("[yellow]Daemon already running[/yellow]")
+            return
+
+        self._daemon_running = True
+        self.set_interval(5.0, self._daemon_tick)
+        detail.add_message("[green]Daemon started - monitoring tasks.md[/green]")
+
+    def _daemon_tick(self) -> None:
+        """Daemon tick."""
+        if not self._daemon_running:
+            return
 
         self.state.load_from_tasks_md()
 
+        # Find eligible tasks
+        eligible = [t for t in self.state.tasks.values() if t.status == TaskStatus.PENDING]
+
+        if eligible and self.state.running_count < 3:
+            task = eligible[0]
+            detail = self.query_one(DetailPanel)
+            detail.add_message(f"[cyan]Daemon: spawning {task.display_id}[/cyan]")
+            self._spawn_task(task.description)
+
+    def _stop_daemon(self) -> None:
+        """Stop daemon."""
+        detail = self.query_one(DetailPanel)
+
+        if not self._daemon_running:
+            detail.add_message("[dim]Daemon not running[/dim]")
+            return
+
+        self._daemon_running = False
+        detail.add_message("[yellow]Daemon stopped[/yellow]")
+
+    # Actions
     def action_quit(self) -> None:
-        """Quit the app."""
         self.exit()
 
-    def action_clear(self) -> None:
-        """Clear the log."""
-        self.query_one("#chat-log", RichLog).clear()
+    def action_clear_logs(self) -> None:
+        log_viewer = self.query_one("#log-viewer", LogViewer)
+        log_viewer.clear_logs()
+
+    def action_new_task(self) -> None:
+        self.query_one("#user-input", Input).focus()
+        self.query_one("#user-input", Input).value = "/new "
+
+    def action_refresh(self) -> None:
+        self.state.load_from_tasks_md()
+        detail = self.query_one(DetailPanel)
+        detail.add_message("[cyan]Refreshed[/cyan]")
 
     def action_cancel(self) -> None:
-        """Cancel current input."""
         self.query_one("#user-input", Input).value = ""
+
+    def action_help(self) -> None:
+        self._show_help()
 
 
 def run_tui() -> None:
