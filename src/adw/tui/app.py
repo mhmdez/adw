@@ -26,7 +26,7 @@ from ..agent.models import TaskStatus
 from ..specs import SpecLoader, Spec, SpecStatus
 from ..workflow import WorkflowManager, TaskPhase
 from .. import __version__
-from .branding import COLORS, SPINNERS, get_loading_message, gradient_text
+from .branding import COLORS, SPINNERS, LOGO, TAGLINE, get_loading_message, gradient_text
 from .styles import APP_CSS
 
 
@@ -381,15 +381,23 @@ class ADWApp(App):
         self.set_interval(2.0, self._poll_agents)
         self.run_worker(self.log_watcher.watch())
 
-        # Beautiful welcome message
+        # Beautiful welcome with ASCII art
         detail = self.query_one(DetailPanel)
-        detail.add_message(f"[bold {COLORS['primary']}]✨ Welcome to ADW[/]")
-        detail.add_message(f"[{COLORS['muted']}]AI Developer Workflow - Your autonomous coding partner[/]")
+        
+        # Show the big ASCII logo with gradient colors
+        for line in LOGO.strip().split('\n'):
+            detail.add_message(f"[bold {COLORS['primary']}]{line}[/]")
+        
         detail.add_message("")
-        detail.add_message(f"[{COLORS['accent']}]Quick Start:[/]")
-        detail.add_message(f"  [{COLORS['primary']}]/new <task>[/] — Create a new task")
-        detail.add_message(f"  [{COLORS['primary']}]/discuss <idea>[/] — Interactive planning")
-        detail.add_message(f"  [{COLORS['primary']}]/help[/] — All commands")
+        detail.add_message(f"[bold {COLORS['accent']}]✨ {TAGLINE}[/]  [dim]—  Ship features while you sleep[/]")
+        detail.add_message("")
+        detail.add_message(f"[{COLORS['muted']}]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+        detail.add_message("")
+        detail.add_message(f"[bold {COLORS['success']}]⚡ Quick Start[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/new[/] [dim]<task>[/]     [dim]→[/]  Create a new task")
+        detail.add_message(f"  [{COLORS['primary']}]/discuss[/] [dim]<idea>[/] [dim]→[/]  Interactive planning")
+        detail.add_message(f"  [{COLORS['primary']}]/run[/] [dim]<task>[/]     [dim]→[/]  Start a task")
+        detail.add_message(f"  [{COLORS['primary']}]/help[/]            [dim]→[/]  All commands")
         detail.add_message("")
 
         # Focus input

@@ -27,10 +27,25 @@ from .update import check_for_update, run_update
 console = Console()
 
 
+def check_for_update_notice() -> None:
+    """Check for updates and display notice if available (non-blocking)."""
+    try:
+        current, latest = check_for_update()
+        if latest and latest > current:
+            console.print()
+            console.print(f"[yellow]⚡ Update available:[/yellow] [dim]{current}[/dim] → [bold cyan]{latest}[/bold cyan]")
+            console.print(f"[dim]   Run [/dim][cyan]adw update[/cyan][dim] to upgrade[/dim]")
+            console.print()
+    except Exception:
+        # Silently ignore update check errors
+        pass
+
+
 @click.group(invoke_without_command=True)
 @click.option("--version", "-v", is_flag=True, help="Show version and exit")
+@click.option("--no-update-check", is_flag=True, help="Skip update check", hidden=True)
 @click.pass_context
-def main(ctx: click.Context, version: bool) -> None:
+def main(ctx: click.Context, version: bool, no_update_check: bool) -> None:
     """ADW - AI Developer Workflow CLI.
 
     Orchestrate Claude Code for any project.
@@ -40,6 +55,10 @@ def main(ctx: click.Context, version: bool) -> None:
     if version:
         console.print(f"adw version {__version__}")
         return
+
+    # Check for updates on startup (unless disabled)
+    if not no_update_check and ctx.invoked_subcommand not in ("update", "version"):
+        check_for_update_notice()
 
     if ctx.invoked_subcommand is None:
         # Default: run TUI dashboard
