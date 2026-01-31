@@ -42,7 +42,8 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
         cmd.extend(["--model", request.model])
     if request.dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
-    cmd.extend(["--output-format", "stream-json"])
+    # --verbose is required when using --print with --output-format=stream-json
+    cmd.extend(["--verbose", "--output-format", "stream-json"])
     cmd.extend(["--print", request.prompt])
 
     try:
@@ -91,6 +92,16 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
 
         # Save final result
         (output_dir / "cc_final_result.txt").write_text(result_text)
+
+        # Check for empty response (Claude didn't produce output)
+        if not messages and not result.stdout.strip():
+            return AgentPromptResponse(
+                output="",
+                success=False,
+                retry_code=RetryCode.CLAUDE_CODE_ERROR,
+                error_message="Claude CLI produced no output - possible auth or connection issue",
+                duration_seconds=duration,
+            )
 
         if has_error:
             return AgentPromptResponse(

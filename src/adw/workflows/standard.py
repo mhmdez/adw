@@ -68,6 +68,7 @@ def run_standard_workflow(
             agent_name=f"planner-{adw_id}",
             model=model,
             working_dir=str(worktree_path),
+            dangerously_skip_permissions=True,
         ))
 
         if not plan_response.success:
@@ -90,6 +91,7 @@ def run_standard_workflow(
             agent_name=f"builder-{adw_id}",
             model=model,
             working_dir=str(worktree_path),
+            dangerously_skip_permissions=True,
         ))
 
         if not impl_response.success:
