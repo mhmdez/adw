@@ -1,0 +1,1 @@
+{"message": "Use TypeScript?", "message_type": "question", "priority": "high", "question": {"context": null, "default": null, "id": "ddc9ea62", "options": null, "question": "Use TypeScript?", "required": true, "timeout_action": "block", "timestamp": "2026-01-31T20:31:42.794095"}, "timestamp": "2026-01-31T20:31:42.794097"}

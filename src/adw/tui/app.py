@@ -23,6 +23,7 @@ from ..protocol.messages import write_answer, AgentQuestion
 from ..agent.manager import AgentManager
 from ..agent.utils import generate_adw_id
 from ..agent.models import TaskStatus
+from ..specs import SpecLoader, Spec, SpecStatus
 from .. import __version__
 
 
@@ -248,12 +249,18 @@ class StatusLine(Horizontal):
         super().__init__()
         self._running_count = 0
         self._total_count = 0
+        self._spec_pending = 0
         self._attention: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("❯", id="prompt")
         yield Input(placeholder="Type /help for commands", id="user-input")
         yield Static("", id="status-info")
+
+    def update_specs(self, pending: int, approved: int = 0) -> None:
+        """Update spec counts."""
+        self._spec_pending = pending
+        self._update_status_line()
 
     def set_attention(self, text: str | None) -> None:
         """Set attention indicator."""
@@ -270,15 +277,21 @@ class StatusLine(Horizontal):
         if total is not None:
             self._total_count = total
 
+        parts = []
         if self._running_count > 0:
-            base = f" {self._running_count}/{self._total_count} running "
+            parts.append(f"{self._running_count}/{self._total_count} running")
         else:
-            base = f" {self._total_count} tasks "
+            parts.append(f"{self._total_count} tasks")
+
+        if self._spec_pending > 0:
+            parts.append(f"📋 {self._spec_pending} specs pending")
+
+        base = " | ".join(parts)
 
         if self._attention:
-            info.update(f"[bold yellow]{self._attention}[/] |{base}")
+            info.update(f"[bold yellow]{self._attention}[/] | {base} ")
         else:
-            info.update(base)
+            info.update(f" {base} ")
 
 
 class ADWApp(App):
@@ -351,6 +364,8 @@ class ADWApp(App):
         self.state = AppState()
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
+        self.spec_loader = SpecLoader()
+        self._specs: list[Spec] = []
         self._daemon_running = False
         self._pending_questions: dict[str, tuple[str, AgentQuestion]] = {}
 
@@ -384,7 +399,12 @@ class ADWApp(App):
         self.query_one("#user-input", Input).focus()
 
         # Initial UI update
+        self._load_specs()
         self._update_ui()
+
+    def _load_specs(self) -> None:
+        """Load specs from disk."""
+        self._specs = self.spec_loader.load_all()
 
     def _update_ui(self) -> None:
         """Update all UI components."""
@@ -394,6 +414,11 @@ class ADWApp(App):
 
         status = self.query_one(StatusLine)
         status.update_status(self.state.running_count, len(self.state.tasks))
+        
+        # Update spec counts
+        spec_pending = sum(1 for s in self._specs if s.status == SpecStatus.PENDING)
+        status.update_specs(pending=spec_pending)
+        
         if self._pending_questions:
             count = len(self._pending_questions)
             status.set_attention(f"❓ {count} question{'s' if count > 1 else ''} pending")
@@ -475,6 +500,109 @@ class ADWApp(App):
 
         detail.add_message("[dim]Questions will show as modals. Use /questions to list.[/dim]")
 
+    def _show_specs(self, filter_arg: str = "") -> None:
+        """Show specs with optional status filter."""
+        detail = self.query_one(DetailPanel)
+        self._load_specs()
+        
+        specs = self._specs
+        if filter_arg:
+            try:
+                status = SpecStatus(filter_arg.lower())
+                specs = [s for s in specs if s.status == status]
+            except ValueError:
+                specs = [s for s in specs if filter_arg.lower() in (s.phase or "").lower()]
+        
+        if not specs:
+            detail.add_message("[dim]No specs found[/dim]")
+            return
+        
+        detail.add_message("[bold]Specs:[/bold]")
+        current_phase = None
+        for spec in specs:
+            if spec.phase != current_phase:
+                current_phase = spec.phase
+                detail.add_message(f"\n[bold dim]{current_phase or 'Unphased'}[/]")
+            
+            icon = {"draft": "📝", "pending": "⏳", "approved": "✅", "rejected": "❌", "implemented": "🎉"}.get(spec.status.value, "?")
+            detail.add_message(f"  {icon} {spec.id}: {spec.title[:40]}")
+        
+        pending = sum(1 for s in self._specs if s.status == SpecStatus.PENDING)
+        approved = sum(1 for s in self._specs if s.status == SpecStatus.APPROVED)
+        detail.add_message(f"\n[dim]{len(specs)} specs | {pending} pending | {approved} approved[/dim]")
+
+    def _show_spec_detail(self, spec_id: str) -> None:
+        """Show detailed spec info."""
+        detail = self.query_one(DetailPanel)
+        if not spec_id:
+            detail.add_message("[red]Usage: /spec <spec-id>[/red]")
+            return
+        
+        spec = self.spec_loader.get_spec(spec_id.upper())
+        if not spec:
+            detail.add_message(f"[red]Spec {spec_id} not found[/red]")
+            return
+        
+        detail.add_message(f"[bold]{spec.id}: {spec.title}[/bold]")
+        detail.add_message(f"Status: {spec.display_status}")
+        detail.add_message(f"Phase: {spec.phase or 'None'}")
+        detail.add_message(f"File: {spec.file_path}")
+        if spec.description:
+            detail.add_message(f"\n{spec.description}")
+
+    def _approve_spec(self, spec_id: str) -> None:
+        """Approve a spec."""
+        detail = self.query_one(DetailPanel)
+        
+        if not spec_id:
+            pending = [s for s in self._specs if s.status == SpecStatus.PENDING]
+            if not pending:
+                detail.add_message("[dim]No specs pending approval[/dim]")
+                return
+            detail.add_message("[bold]Pending specs:[/bold]")
+            for spec in pending:
+                detail.add_message(f"  ⏳ {spec.id}: {spec.title[:40]}")
+            detail.add_message("\n[dim]Use /approve <spec-id> to approve[/dim]")
+            return
+        
+        spec = self.spec_loader.get_spec(spec_id.upper())
+        if not spec:
+            detail.add_message(f"[red]Spec {spec_id} not found[/red]")
+            return
+        
+        if self.spec_loader.update_status(spec_id.upper(), SpecStatus.APPROVED):
+            detail.add_message(f"[green]✅ Approved {spec_id}[/green]")
+            self._load_specs()
+            self._update_ui()
+        else:
+            detail.add_message(f"[red]Failed to approve {spec_id}[/red]")
+
+    def _reject_spec(self, args: str) -> None:
+        """Reject a spec with reason."""
+        detail = self.query_one(DetailPanel)
+        
+        parts = args.split(maxsplit=1)
+        spec_id = parts[0] if parts else ""
+        reason = parts[1] if len(parts) > 1 else None
+        
+        if not spec_id:
+            detail.add_message("[red]Usage: /reject <spec-id> [reason][/red]")
+            return
+        
+        spec = self.spec_loader.get_spec(spec_id.upper())
+        if not spec:
+            detail.add_message(f"[red]Spec {spec_id} not found[/red]")
+            return
+        
+        if self.spec_loader.update_status(spec_id.upper(), SpecStatus.REJECTED, reason):
+            detail.add_message(f"[yellow]❌ Rejected {spec_id}[/yellow]")
+            if reason:
+                detail.add_message(f"[dim]Reason: {reason}[/dim]")
+            self._load_specs()
+            self._update_ui()
+        else:
+            detail.add_message(f"[red]Failed to reject {spec_id}[/red]")
+
     def _poll_agents(self) -> None:
         """Poll for agent completion."""
         completed = self.agent_manager.poll()
@@ -552,6 +680,14 @@ class ADWApp(App):
             self._stop_daemon()
         elif cmd == "questions":
             self._show_pending_questions()
+        elif cmd == "specs":
+            self._show_specs(args)
+        elif cmd == "spec":
+            self._show_spec_detail(args)
+        elif cmd == "approve":
+            self._approve_spec(args)
+        elif cmd == "reject":
+            self._reject_spec(args)
         elif cmd == "version":
             detail.add_message(f"ADW version {__version__}")
         elif cmd == "quit" or cmd == "exit":
