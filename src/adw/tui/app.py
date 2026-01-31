@@ -223,6 +223,8 @@ class ADWApp(App):
 
         if cmd == "help":
             self._show_help()
+        elif cmd == "init":
+            self._run_init()
         elif cmd == "tasks" or cmd == "list":
             self.state.load_from_tasks_md()
             self._show_tasks()
@@ -247,6 +249,7 @@ class ADWApp(App):
     def _show_help(self) -> None:
         """Show help message."""
         self._log_response("[bold]Commands:[/bold]")
+        self._log_response("  /init        - Initialize ADW in current project")
         self._log_response("  /new <desc>  - Create task and spawn agent")
         self._log_response("  /tasks       - List all tasks")
         self._log_response("  /status      - Show system status")
@@ -281,6 +284,39 @@ class ADWApp(App):
         else:
             self._log_response(f"Update available: {current} → {latest}")
             self._log_response("Run: uv tool upgrade adw")
+
+    def _run_init(self) -> None:
+        """Initialize ADW in current project."""
+        from ..init import init_project
+
+        self._log_response("Initializing ADW in current project...")
+
+        try:
+            result = init_project(Path.cwd(), force=False)
+
+            if result["created"]:
+                self._log_response("[green]Created:[/green]")
+                for path in result["created"]:
+                    self._log_response(f"  + {path}")
+
+            if result["updated"]:
+                self._log_response("[cyan]Updated:[/cyan]")
+                for path in result["updated"]:
+                    self._log_response(f"  ~ {path}")
+
+            if result["skipped"]:
+                self._log_response("[dim]Skipped (already exist):[/dim]")
+                for path in result["skipped"]:
+                    self._log_response(f"  - {path}")
+
+            self._log_response("")
+            self._log_response("[green]ADW initialized![/green] Run /new <task> to get started.")
+
+            # Reload tasks
+            self.state.load_from_tasks_md()
+
+        except Exception as e:
+            self._log_error(f"Init failed: {e}")
 
     def _spawn_task(self, description: str) -> None:
         """Spawn a new task."""
