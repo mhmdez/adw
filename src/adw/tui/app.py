@@ -23,11 +23,8 @@ from ..protocol.messages import write_message, MessagePriority
 from .. import __version__
 
 
-# ASCII Logo
-LOGO = """[bold cyan]
- █▀█ █▀▄ █ █ █  [/bold cyan][white]ADW[/white] [dim]v{version}[/dim]
-[dim]AI Developer Workflow[/dim]
-"""
+# Simple header
+LOGO = "[bold cyan]❯❯[/bold cyan] [bold]ADW[/bold] [dim]v{version}[/dim]"
 
 
 class ADWApp(App):
@@ -35,45 +32,55 @@ class ADWApp(App):
 
     CSS = """
     Screen {
-        background: $surface;
+        background: #1a1a2e;
     }
 
     #header {
         dock: top;
-        height: 4;
-        padding: 0 2;
-        background: $primary 10%;
+        height: 1;
+        padding: 0 1;
+        background: #1a1a2e;
+        color: #4fc3f7;
     }
 
     #chat-container {
         height: 1fr;
-        padding: 0 2;
+        padding: 0 1;
+        background: #1a1a2e;
     }
 
     #chat-log {
         height: 1fr;
-        scrollbar-gutter: stable;
+        background: #1a1a2e;
+        scrollbar-size: 1 1;
     }
 
     #input-container {
         dock: bottom;
-        height: 3;
-        padding: 0 2;
-        background: $surface;
+        height: 1;
+        padding: 0 1;
+        background: #1a1a2e;
     }
 
     #prompt-symbol {
         width: 3;
-        padding: 1 0;
-        color: $success;
+        color: #4fc3f7;
+        background: #1a1a2e;
     }
 
     #user-input {
         width: 1fr;
+        background: #1a1a2e;
+        border: none;
+        padding: 0;
     }
 
     #user-input:focus {
         border: none;
+    }
+
+    #user-input > .input--placeholder {
+        color: #666;
     }
     """
 
@@ -104,10 +111,10 @@ class ADWApp(App):
         with Container(id="chat-container"):
             yield RichLog(id="chat-log", highlight=True, markup=True)
 
-        # Input area
+        # Input area - clean like Claude Code
         with Horizontal(id="input-container"):
-            yield Static(">", id="prompt-symbol")
-            yield Input(placeholder="Type a message or /command...", id="user-input")
+            yield Static("❯", id="prompt-symbol")
+            yield Input(placeholder="", id="user-input")
 
     async def on_mount(self) -> None:
         """Initialize on mount."""
