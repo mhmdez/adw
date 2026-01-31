@@ -1,42 +1,84 @@
-"""Main ADW TUI application."""
+"""Main ADW TUI application - Claude Code style interface."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Placeholder, Input
+from textual.containers import Container, Vertical, Horizontal
+from textual.widgets import Static, Input, RichLog
+from rich.text import Text
 
-from .widgets.status_bar import StatusBar
-from .widgets.log_viewer import LogViewer
-from .widgets.task_list import TaskList
-from .widgets.task_detail import TaskDetail
+from .commands import execute_command, TUI_COMMANDS
 from .state import AppState
 from .log_watcher import LogWatcher, LogEvent
 from ..agent.manager import AgentManager
 from ..agent.task_updater import mark_in_progress
 from ..agent.utils import generate_adw_id
 from ..protocol.messages import write_message, MessagePriority
+from .. import __version__
+
+
+# ASCII Logo
+LOGO = """[bold cyan]
+ █▀█ █▀▄ █ █ █  [/bold cyan][white]ADW[/white] [dim]v{version}[/dim]
+[dim]AI Developer Workflow[/dim]
+"""
 
 
 class ADWApp(App):
-    """ADW Dashboard Application."""
+    """ADW - Claude Code style chat interface."""
 
-    CSS_PATH = "styles.tcss"
-    TITLE = "ADW"
-    SUB_TITLE = "AI Developer Workflow"
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+
+    #header {
+        dock: top;
+        height: 4;
+        padding: 0 2;
+        background: $primary 10%;
+    }
+
+    #chat-container {
+        height: 1fr;
+        padding: 0 2;
+    }
+
+    #chat-log {
+        height: 1fr;
+        scrollbar-gutter: stable;
+    }
+
+    #input-container {
+        dock: bottom;
+        height: 3;
+        padding: 0 2;
+        background: $surface;
+    }
+
+    #prompt-symbol {
+        width: 3;
+        padding: 1 0;
+        color: $success;
+    }
+
+    #user-input {
+        width: 1fr;
+    }
+
+    #user-input:focus {
+        border: none;
+    }
+    """
 
     BINDINGS = [
-        Binding("n", "new_task", "New"),
-        Binding("q", "quit", "Quit"),
-        Binding("?", "show_help", "Help"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("tab", "focus_next", "Next"),
-        Binding("shift+tab", "focus_previous", "Prev"),
-        Binding("escape", "cancel", "Cancel"),
-        Binding("c", "clear_logs", "Clear"),
+        Binding("ctrl+c", "quit", "Quit", show=False),
+        Binding("ctrl+l", "clear", "Clear", show=False),
+        Binding("escape", "cancel", "Cancel", show=False),
     ]
 
     def __init__(self):
@@ -44,7 +86,7 @@ class ADWApp(App):
         self.state = AppState()
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
-        self._new_task_mode = False  # Flag for new task input mode
+        self._new_task_mode = False
 
         self.state.subscribe(self._on_state_change)
         self.agent_manager.subscribe(self._on_agent_event)
@@ -52,75 +94,99 @@ class ADWApp(App):
 
     def compose(self) -> ComposeResult:
         """Create the UI layout."""
-        yield Header()
+        # Header with logo
+        yield Static(LOGO.format(version=__version__), id="header")
 
-        with Container(id="app-container"):
-            with Horizontal(id="main-panels"):
-                # Left: Task list
-                with Vertical(id="left-panel", classes="panel"):
-                    yield Static("TASKS", classes="panel-title")
-                    yield TaskList(id="task-list")
+        # Main chat area
+        with Container(id="chat-container"):
+            yield RichLog(id="chat-log", highlight=True, markup=True)
 
-                # Right: Task detail
-                with Vertical(id="right-panel", classes="panel"):
-                    yield Static("DETAILS", classes="panel-title")
-                    yield TaskDetail(id="task-detail")
+        # Input area
+        with Horizontal(id="input-container"):
+            yield Static(">", id="prompt-symbol")
+            yield Input(placeholder="Type a message or /command...", id="user-input")
 
-            # Bottom: Logs
-            with Vertical(id="bottom-panel", classes="panel"):
-                yield Static("LOGS", classes="panel-title")
-                yield LogViewer(id="log-viewer")
+    async def on_mount(self) -> None:
+        """Initialize on mount."""
+        self.state.load_from_tasks_md()
+        self.set_interval(2.0, self._poll_agents)
+        self.run_worker(self.log_watcher.watch())
 
-            # Status/input bar
-            yield StatusBar(id="status-bar")
+        # Welcome message
+        self._log_system("Welcome to ADW - AI Developer Workflow")
+        self._log_system("Type [bold]/help[/bold] for available commands")
+        self._log_system("")
 
-        yield Footer()
+        # Show current tasks
+        self._show_tasks()
+
+        # Focus input
+        self.query_one("#user-input", Input).focus()
+
+    def _log_system(self, message: str) -> None:
+        """Log a system message."""
+        log = self.query_one("#chat-log", RichLog)
+        log.write(Text.from_markup(f"[dim]{message}[/dim]"))
+
+    def _log_user(self, message: str) -> None:
+        """Log a user message."""
+        log = self.query_one("#chat-log", RichLog)
+        log.write(Text.from_markup(f"[bold green]>[/bold green] {message}"))
+
+    def _log_response(self, message: str) -> None:
+        """Log a response message."""
+        log = self.query_one("#chat-log", RichLog)
+        log.write(Text.from_markup(message))
+
+    def _log_error(self, message: str) -> None:
+        """Log an error message."""
+        log = self.query_one("#chat-log", RichLog)
+        log.write(Text.from_markup(f"[bold red]Error:[/bold red] {message}"))
+
+    def _show_tasks(self) -> None:
+        """Show current tasks."""
+        if not self.state.tasks:
+            self._log_system("No tasks. Create one with [bold]/new <description>[/bold]")
+            return
+
+        self._log_system(f"[bold]Tasks ({len(self.state.tasks)}):[/bold]")
+        for key, task in self.state.tasks.items():
+            status_icon = {
+                "pending": "⏳",
+                "in_progress": "🟡",
+                "done": "✅",
+                "blocked": "⏰",
+                "failed": "❌",
+            }.get(task.status.value, "○")
+            self._log_system(f"  {status_icon} [{task.display_id}] {task.description[:50]}")
 
     def _on_state_change(self, state: AppState) -> None:
         """Handle state changes."""
-        # Update task list
-        task_list = self.query_one("#task-list", TaskList)
-        task_list.update_tasks(state.tasks)
-
-        # Update detail
-        task_detail = self.query_one("#task-detail", TaskDetail)
-        task_detail.update_task(state.selected_task)
-
-        # Update status bar
-        status_bar = self.query_one("#status-bar", StatusBar)
-        status_bar.update_status(
-            active_tasks=state.running_count,
-            selected_task=state.selected_task.display_id if state.selected_task else None,
-        )
-
-        # Filter logs to selected task
-        log_viewer = self.query_one("#log-viewer", LogViewer)
-        if state.selected_task:
-            log_viewer.filter_by_agent(state.selected_task.adw_id)
-        else:
-            log_viewer.filter_by_agent(None)
+        pass  # We update UI reactively via commands
 
     def _on_agent_event(self, event: str, adw_id: str, data: dict) -> None:
         """Handle agent events."""
         if event == "spawned":
-            self.notify(f"Agent {adw_id} started")
+            self._log_response(f"[cyan]Agent {adw_id[:8]} started[/cyan]")
         elif event == "completed":
-            self.notify(f"Agent {adw_id} completed")
-            self.state.load_from_tasks_md()  # Refresh
+            self._log_response(f"[green]Agent {adw_id[:8]} completed[/green]")
+            self.state.load_from_tasks_md()
         elif event == "failed":
-            self.notify(f"Agent {adw_id} failed", severity="error")
+            self._log_error(f"Agent {adw_id[:8]} failed")
             self.state.load_from_tasks_md()
 
     def _on_log_event(self, event: LogEvent) -> None:
-        """Handle log event."""
-        log_viewer = self.query_one("#log-viewer", LogViewer)
-        log_viewer.on_log_event(event)
+        """Handle log event from agents."""
+        icon = {
+            "assistant": "💬",
+            "tool": "🔧",
+            "tool_result": "✓",
+            "result": "✅",
+            "error": "❌",
+        }.get(event.event_type, "•")
 
-    async def on_mount(self) -> None:
-        """Load initial state and start polling."""
-        self.state.load_from_tasks_md()
-        self.set_interval(2.0, self._poll_agents)
-        self.run_worker(self.log_watcher.watch())
+        msg = event.message[:80] if event.message else ""
+        self._log_response(f"[dim]{icon} [{event.adw_id[:8]}] {msg}[/dim]")
 
     def _poll_agents(self) -> None:
         """Poll for agent completion."""
@@ -128,141 +194,136 @@ class ADWApp(App):
         if completed:
             self.state.load_from_tasks_md()
 
-    def on_task_list_task_selected(self, event: TaskList.TaskSelected) -> None:
-        """Handle task selection."""
-        self.state.select_task(event.key)
-
-    def action_refresh(self) -> None:
-        """Refresh from tasks.md."""
-        self.state.load_from_tasks_md()
-        self.notify("Refreshed")
-
-    async def action_new_task(self) -> None:
-        """Create and start new task."""
-        # Focus on status bar input for task description
-        status_bar = self.query_one("#status-bar", StatusBar)
-        input_field = self.query_one("#status-input-field", Input)
-
-        # Set placeholder to guide user
-        input_field.placeholder = "Enter task description (then press Enter to spawn agent)..."
-        input_field.focus()
-
-        # Set a flag to indicate we're in new task mode
-        self._new_task_mode = True
-        self.notify("Enter task description in input bar")
-
-    def spawn_task(self, description: str, workflow: str = "standard", model: str = "sonnet") -> None:
-        """Spawn a new task agent."""
-        adw_id = generate_adw_id()
-        worktree = f"task-{adw_id}"
-        tasks_file = Path("tasks.md")
-
-        # Try to mark existing task in progress
-        success = mark_in_progress(tasks_file, description, adw_id)
-
-        # If task doesn't exist in tasks.md, add it first
-        if not success:
-            # Read current content
-            content = tasks_file.read_text() if tasks_file.exists() else "# ADW Build Task Board\n\n---\n\n## Worktree: main\n\n"
-
-            # Find the main worktree section and add the task
-            lines = content.split("\n")
-            insert_idx = None
-
-            # Find the main worktree section
-            for i, line in enumerate(lines):
-                if "## Worktree: main" in line:
-                    # Find next empty line after this section header
-                    for j in range(i + 1, len(lines)):
-                        if lines[j].strip() == "" or lines[j].startswith("---"):
-                            insert_idx = j
-                            break
-                    break
-
-            # If we found where to insert, add the task
-            if insert_idx is not None:
-                lines.insert(insert_idx, f"[🟡, {adw_id}] {description}")
-                tasks_file.write_text("\n".join(lines))
-            else:
-                # Fallback: append to end of main section
-                content = content.rstrip() + f"\n[🟡, {adw_id}] {description}\n"
-                tasks_file.write_text(content)
-
-        # Spawn agent
-        self.agent_manager.spawn_workflow(
-            task_description=description,
-            worktree_name=worktree,
-            workflow=workflow,
-            model=model,
-            adw_id=adw_id,
-        )
-
-        # Refresh state
-        self.state.load_from_tasks_md()
-        self.notify(f"Task {adw_id[:8]} spawned with {workflow} workflow")
-
-    def action_show_help(self) -> None:
-        """Show help."""
-        self.notify("Help: n=new, q=quit, tab=switch panels")
-
-    def action_cancel(self) -> None:
-        """Cancel current action."""
-        if self._new_task_mode:
-            self._new_task_mode = False
-            input_field = self.query_one("#status-input-field", Input)
-            input_field.placeholder = "Type message or command..."
-            input_field.value = ""
-            self.notify("New task cancelled")
-
-    def action_clear_logs(self) -> None:
-        """Clear log viewer."""
-        log_viewer = self.query_one("#log-viewer", LogViewer)
-        log_viewer.clear_logs()
-
-    async def action_quit(self) -> None:
-        """Quit the application."""
-        self.exit()
-
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle input submission from status bar."""
-        if event.input.id != "status-input-field":
+        """Handle input submission."""
+        if event.input.id != "user-input":
             return
 
         message = event.value.strip()
         if not message:
             return
 
-        # Clear the input
         event.input.value = ""
+        self._log_user(message)
 
-        # Check if we're in new task mode
-        if self._new_task_mode:
-            # Spawn new task
-            self.spawn_task(message)
-            self._new_task_mode = False
-            # Reset placeholder
-            event.input.placeholder = "Type message or command..."
+        # Handle slash commands
+        if message.startswith("/"):
+            self._handle_command(message)
             return
 
-        # Determine priority based on message content
-        priority = MessagePriority.NORMAL
-        if message.upper().startswith("STOP"):
-            priority = MessagePriority.INTERRUPT
-        elif message.startswith("!"):
-            priority = MessagePriority.HIGH
-            message = message[1:].strip()
+        # Otherwise treat as new task
+        self._log_response("Creating task and spawning agent...")
+        self._spawn_task(message)
 
-        # Send to selected task if any
-        if self.state.selected_task and self.state.selected_task.adw_id:
-            write_message(
-                adw_id=self.state.selected_task.adw_id,
-                message=message,
-                priority=priority
-            )
-            self.notify(f"Message sent to {self.state.selected_task.adw_id[:8]}")
+    def _handle_command(self, text: str) -> None:
+        """Handle a slash command."""
+        parts = text[1:].split(maxsplit=1)
+        cmd = parts[0].lower()
+        args = parts[1] if len(parts) > 1 else ""
+
+        if cmd == "help":
+            self._show_help()
+        elif cmd == "tasks" or cmd == "list":
+            self.state.load_from_tasks_md()
+            self._show_tasks()
+        elif cmd == "new":
+            if args:
+                self._spawn_task(args)
+            else:
+                self._log_error("Usage: /new <task description>")
+        elif cmd == "status":
+            self._show_status()
+        elif cmd == "clear":
+            self.query_one("#chat-log", RichLog).clear()
+        elif cmd == "version":
+            self._log_response(f"ADW version {__version__}")
+        elif cmd == "update":
+            self._run_update()
+        elif cmd == "quit" or cmd == "exit":
+            self.exit()
         else:
-            # No task selected - could spawn new task if it looks like a task description
-            self.notify("No task selected. Select a task first or press 'n' to create new task.")
+            self._log_error(f"Unknown command: /{cmd}. Type /help for commands.")
+
+    def _show_help(self) -> None:
+        """Show help message."""
+        self._log_response("[bold]Commands:[/bold]")
+        self._log_response("  /new <desc>  - Create task and spawn agent")
+        self._log_response("  /tasks       - List all tasks")
+        self._log_response("  /status      - Show system status")
+        self._log_response("  /clear       - Clear screen")
+        self._log_response("  /version     - Show version")
+        self._log_response("  /update      - Check for updates")
+        self._log_response("  /quit        - Exit ADW")
+        self._log_response("")
+        self._log_response("[dim]Or just type a task description to create and run it[/dim]")
+
+    def _show_status(self) -> None:
+        """Show status."""
+        total = len(self.state.tasks)
+        running = self.state.running_count
+        self._log_response(f"[bold]Status:[/bold]")
+        self._log_response(f"  Tasks: {total} total, {running} running")
+        self._log_response(f"  Version: {__version__}")
+
+    def _run_update(self) -> None:
+        """Check for updates."""
+        from ..update import check_for_update
+
+        self._log_response("Checking for updates...")
+        current, latest = check_for_update()
+
+        if latest is None:
+            self._log_error("Could not check for updates")
+            return
+
+        if latest <= current:
+            self._log_response(f"Already at latest version ({current})")
+        else:
+            self._log_response(f"Update available: {current} → {latest}")
+            self._log_response("Run: uv tool upgrade adw")
+
+    def _spawn_task(self, description: str) -> None:
+        """Spawn a new task."""
+        adw_id = generate_adw_id()
+        tasks_file = Path("tasks.md")
+
+        # Add task to tasks.md
+        if tasks_file.exists():
+            content = tasks_file.read_text()
+        else:
+            content = "# Tasks\n\n## Active Tasks\n\n"
+
+        content = content.rstrip() + f"\n[🟡, {adw_id}] {description}\n"
+        tasks_file.write_text(content)
+
+        self._log_response(f"[cyan]Task {adw_id[:8]} created[/cyan]")
+
+        # Spawn agent
+        try:
+            self.agent_manager.spawn_workflow(
+                task_description=description,
+                worktree_name=f"task-{adw_id}",
+                workflow="standard",
+                model="sonnet",
+                adw_id=adw_id,
+            )
+            self._log_response(f"[cyan]Agent spawned for task {adw_id[:8]}[/cyan]")
+        except Exception as e:
+            self._log_error(f"Failed to spawn agent: {e}")
+
+        self.state.load_from_tasks_md()
+
+    def action_quit(self) -> None:
+        """Quit the app."""
+        self.exit()
+
+    def action_clear(self) -> None:
+        """Clear the log."""
+        self.query_one("#chat-log", RichLog).clear()
+
+    def action_cancel(self) -> None:
+        """Cancel current input."""
+        self.query_one("#user-input", Input).value = ""
 
 
 def run_tui() -> None:
