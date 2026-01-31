@@ -703,7 +703,13 @@ class ADWApp(App):
 
     def _ask_question(self, question: str) -> None:
         """Ask Claude a question and display the response."""
-        self._log_response("[dim]Thinking...[/dim]")
+        self._log_response("[dim]Thinking... (this may take a moment)[/dim]")
+        # Run in background worker to not block TUI
+        self.run_worker(self._ask_question_async(question))
+
+    async def _ask_question_async(self, question: str) -> None:
+        """Async worker to ask Claude a question."""
+        import asyncio
 
         try:
             # Use Claude CLI to answer the question
@@ -711,31 +717,41 @@ class ADWApp(App):
             context = ""
             claude_md = Path.cwd() / "CLAUDE.md"
             if claude_md.exists():
-                context = f"Project context from CLAUDE.md:\n{claude_md.read_text()[:2000]}\n\n"
+                try:
+                    context = f"Project context from CLAUDE.md:\n{claude_md.read_text()[:2000]}\n\n"
+                except Exception:
+                    pass
 
             prompt = f"{context}Question: {question}\n\nProvide a concise, helpful answer."
 
-            result = subprocess.run(
-                ["claude", "--print", prompt],
-                capture_output=True,
-                text=True,
-                timeout=60,
+            # Run subprocess asynchronously
+            process = await asyncio.create_subprocess_exec(
+                "claude", "--print", prompt,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
 
-            if result.returncode == 0 and result.stdout:
-                # Display response
-                response = result.stdout.strip()
-                for line in response.split("\n"):
-                    self._log_response(line)
-            else:
-                self._log_error("Failed to get response from Claude")
-                if result.stderr:
-                    self._log_error(f"  {result.stderr[:200]}")
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=120.0
+                )
+
+                if process.returncode == 0 and stdout:
+                    response = stdout.decode().strip()
+                    for line in response.split("\n"):
+                        self._log_response(line)
+                else:
+                    self._log_error("Failed to get response from Claude")
+                    if stderr:
+                        self._log_error(f"  {stderr.decode()[:200]}")
+
+            except asyncio.TimeoutError:
+                process.kill()
+                self._log_error("Request timed out (120s)")
 
         except FileNotFoundError:
             self._log_error("Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code")
-        except subprocess.TimeoutExpired:
-            self._log_error("Request timed out")
         except Exception as e:
             self._log_error(f"Error: {e}")
 
