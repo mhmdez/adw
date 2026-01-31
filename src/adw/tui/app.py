@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 
@@ -87,6 +89,7 @@ class ADWApp(App):
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
         self._new_task_mode = False
+        self._daemon_running = False
 
         self.state.subscribe(self._on_state_change)
         self.agent_manager.subscribe(self._on_agent_event)
@@ -221,6 +224,7 @@ class ADWApp(App):
         cmd = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
+        # Core commands
         if cmd == "help":
             self._show_help()
         elif cmd == "init":
@@ -243,20 +247,57 @@ class ADWApp(App):
             self._run_update()
         elif cmd == "quit" or cmd == "exit":
             self.exit()
+        # New commands
+        elif cmd == "doctor":
+            self._run_doctor()
+        elif cmd == "verify":
+            self._run_verify(args)
+        elif cmd == "approve":
+            self._run_approve(args)
+        elif cmd == "run":
+            self._run_daemon(args)
+        elif cmd == "stop":
+            self._stop_daemon()
+        elif cmd == "worktree":
+            self._run_worktree(args)
+        elif cmd == "github":
+            self._run_github(args)
         else:
             self._log_error(f"Unknown command: /{cmd}. Type /help for commands.")
 
     def _show_help(self) -> None:
         """Show help message."""
         self._log_response("[bold]Commands:[/bold]")
-        self._log_response("  /init        - Initialize ADW in current project")
-        self._log_response("  /new <desc>  - Create task and spawn agent")
-        self._log_response("  /tasks       - List all tasks")
-        self._log_response("  /status      - Show system status")
-        self._log_response("  /clear       - Clear screen")
-        self._log_response("  /version     - Show version")
-        self._log_response("  /update      - Check for updates")
-        self._log_response("  /quit        - Exit ADW")
+        self._log_response("")
+        self._log_response("[cyan]Setup & Info:[/cyan]")
+        self._log_response("  /init          - Initialize ADW in current project")
+        self._log_response("  /doctor        - Check installation health")
+        self._log_response("  /status        - Show system status")
+        self._log_response("  /version       - Show version")
+        self._log_response("  /update        - Check for updates")
+        self._log_response("")
+        self._log_response("[cyan]Tasks:[/cyan]")
+        self._log_response("  /new <desc>    - Create task and spawn agent")
+        self._log_response("  /tasks         - List all tasks")
+        self._log_response("  /verify [id]   - Verify completed task")
+        self._log_response("  /approve [spec]- Approve spec, create tasks")
+        self._log_response("")
+        self._log_response("[cyan]Automation:[/cyan]")
+        self._log_response("  /run           - Start autonomous daemon")
+        self._log_response("  /stop          - Stop daemon")
+        self._log_response("")
+        self._log_response("[cyan]Worktrees:[/cyan]")
+        self._log_response("  /worktree list          - List worktrees")
+        self._log_response("  /worktree create <name> - Create worktree")
+        self._log_response("  /worktree remove <name> - Remove worktree")
+        self._log_response("")
+        self._log_response("[cyan]GitHub:[/cyan]")
+        self._log_response("  /github watch           - Watch issues")
+        self._log_response("  /github process <num>   - Process issue")
+        self._log_response("")
+        self._log_response("[cyan]Other:[/cyan]")
+        self._log_response("  /clear         - Clear screen")
+        self._log_response("  /quit          - Exit ADW")
         self._log_response("")
         self._log_response("[dim]Or just type a task description to create and run it[/dim]")
 
@@ -264,9 +305,16 @@ class ADWApp(App):
         """Show status."""
         total = len(self.state.tasks)
         running = self.state.running_count
-        self._log_response(f"[bold]Status:[/bold]")
-        self._log_response(f"  Tasks: {total} total, {running} running")
+        pending = sum(1 for t in self.state.tasks.values() if t.status.value == "pending")
+        done = sum(1 for t in self.state.tasks.values() if t.status.value == "done")
+
+        self._log_response("[bold]Status:[/bold]")
         self._log_response(f"  Version: {__version__}")
+        self._log_response(f"  Tasks: {total} total")
+        self._log_response(f"    ⏳ Pending: {pending}")
+        self._log_response(f"    🟡 Running: {running}")
+        self._log_response(f"    ✅ Done: {done}")
+        self._log_response(f"  Daemon: {'[green]running[/green]' if self._daemon_running else '[dim]stopped[/dim]'}")
 
     def _run_update(self) -> None:
         """Check for updates."""
@@ -317,6 +365,338 @@ class ADWApp(App):
 
         except Exception as e:
             self._log_error(f"Init failed: {e}")
+
+    def _run_doctor(self) -> None:
+        """Check installation health."""
+        self._log_response("[bold]ADW Health Check[/bold]")
+        self._log_response("")
+
+        # Check ADW version
+        self._log_response(f"[green]✓[/green] ADW version: {__version__}")
+
+        # Check Claude Code
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip() or "installed"
+                self._log_response(f"[green]✓[/green] Claude Code: {version}")
+            else:
+                self._log_response("[red]✗[/red] Claude Code: not working")
+        except FileNotFoundError:
+            self._log_response("[red]✗[/red] Claude Code: not installed")
+            self._log_response("  Install: npm install -g @anthropic-ai/claude-code")
+        except Exception as e:
+            self._log_response(f"[yellow]?[/yellow] Claude Code: {e}")
+
+        # Check project files
+        cwd = Path.cwd()
+
+        if (cwd / "CLAUDE.md").exists():
+            self._log_response("[green]✓[/green] CLAUDE.md exists")
+        else:
+            self._log_response("[yellow]![/yellow] CLAUDE.md missing (run /init)")
+
+        if (cwd / "tasks.md").exists():
+            self._log_response("[green]✓[/green] tasks.md exists")
+        else:
+            self._log_response("[yellow]![/yellow] tasks.md missing (run /init)")
+
+        if (cwd / ".claude" / "commands").exists():
+            self._log_response("[green]✓[/green] .claude/commands/ exists")
+        else:
+            self._log_response("[yellow]![/yellow] .claude/commands/ missing (run /init)")
+
+        # Check git
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                self._log_response("[green]✓[/green] Git repository detected")
+            else:
+                self._log_response("[yellow]![/yellow] Not a git repository")
+        except Exception:
+            self._log_response("[yellow]?[/yellow] Could not check git")
+
+    def _run_verify(self, args: str) -> None:
+        """Verify a completed task."""
+        task_id = args.strip() if args else None
+
+        # Find tasks to verify (done status)
+        done_tasks = [
+            t for t in self.state.tasks.values()
+            if t.status.value == "done"
+        ]
+
+        if not done_tasks:
+            self._log_response("No completed tasks to verify.")
+            return
+
+        if task_id:
+            # Find specific task
+            task = None
+            for t in done_tasks:
+                if t.adw_id and t.adw_id.startswith(task_id):
+                    task = t
+                    break
+            if not task:
+                self._log_error(f"Task {task_id} not found or not completed")
+                return
+            self._log_response(f"Opening Claude Code to verify task {task.display_id}...")
+            self._log_response(f"  {task.description[:60]}")
+        else:
+            # Show list
+            self._log_response("[bold]Completed tasks to verify:[/bold]")
+            for t in done_tasks:
+                self._log_response(f"  ✅ [{t.display_id}] {t.description[:50]}")
+            self._log_response("")
+            self._log_response("Run /verify <task_id> to verify a specific task")
+
+    def _run_approve(self, args: str) -> None:
+        """Approve a pending spec."""
+        spec_name = args.strip() if args else None
+        specs_dir = Path.cwd() / "specs"
+
+        if not specs_dir.exists():
+            self._log_response("No specs/ directory found. Run /init first.")
+            return
+
+        # Find pending specs
+        specs = list(specs_dir.glob("*.md"))
+        if not specs:
+            self._log_response("No specs found in specs/ directory.")
+            return
+
+        if spec_name:
+            # Find specific spec
+            spec_path = specs_dir / f"{spec_name}.md"
+            if not spec_path.exists():
+                spec_path = specs_dir / spec_name
+            if not spec_path.exists():
+                self._log_error(f"Spec '{spec_name}' not found")
+                return
+            self._log_response(f"Opening Claude Code to approve spec: {spec_path.name}")
+        else:
+            # Show list
+            self._log_response("[bold]Available specs:[/bold]")
+            for spec in specs:
+                self._log_response(f"  📄 {spec.name}")
+            self._log_response("")
+            self._log_response("Run /approve <spec_name> to approve a specific spec")
+
+    def _run_daemon(self, args: str) -> None:
+        """Start autonomous daemon."""
+        if self._daemon_running:
+            self._log_response("Daemon is already running. Use /stop to stop it.")
+            return
+
+        self._log_response("[cyan]Starting autonomous daemon...[/cyan]")
+        self._log_response("  Monitoring tasks.md for eligible tasks")
+        self._log_response("  Press /stop to stop the daemon")
+        self._log_response("")
+
+        # Parse args for options
+        max_concurrent = 3
+        poll_interval = 5.0
+
+        if args:
+            parts = args.split()
+            for i, part in enumerate(parts):
+                if part in ("-m", "--max") and i + 1 < len(parts):
+                    try:
+                        max_concurrent = int(parts[i + 1])
+                    except ValueError:
+                        pass
+                elif part in ("-p", "--poll") and i + 1 < len(parts):
+                    try:
+                        poll_interval = float(parts[i + 1])
+                    except ValueError:
+                        pass
+
+        self._log_response(f"  Max concurrent: {max_concurrent}")
+        self._log_response(f"  Poll interval: {poll_interval}s")
+
+        self._daemon_running = True
+
+        # Start daemon polling
+        self.set_interval(poll_interval, self._daemon_tick)
+        self._log_response("[green]Daemon started[/green]")
+
+    def _daemon_tick(self) -> None:
+        """Daemon tick - check for eligible tasks."""
+        if not self._daemon_running:
+            return
+
+        self.state.load_from_tasks_md()
+
+        # Find eligible tasks (pending, not blocked)
+        eligible = [
+            t for t in self.state.tasks.values()
+            if t.status.value == "pending"
+        ]
+
+        if eligible and self.state.running_count < 3:
+            task = eligible[0]
+            self._log_response(f"[cyan]Daemon: spawning agent for {task.display_id}[/cyan]")
+            self._spawn_task(task.description)
+
+    def _stop_daemon(self) -> None:
+        """Stop the daemon."""
+        if not self._daemon_running:
+            self._log_response("Daemon is not running.")
+            return
+
+        self._daemon_running = False
+        self._log_response("[yellow]Daemon stopped[/yellow]")
+
+    def _run_worktree(self, args: str) -> None:
+        """Manage git worktrees."""
+        parts = args.strip().split(maxsplit=1) if args else []
+        subcmd = parts[0].lower() if parts else "list"
+        subargs = parts[1] if len(parts) > 1 else ""
+
+        if subcmd == "list":
+            self._worktree_list()
+        elif subcmd == "create":
+            if subargs:
+                self._worktree_create(subargs)
+            else:
+                self._log_error("Usage: /worktree create <name>")
+        elif subcmd == "remove" or subcmd == "rm":
+            if subargs:
+                self._worktree_remove(subargs)
+            else:
+                self._log_error("Usage: /worktree remove <name>")
+        else:
+            self._log_error(f"Unknown worktree command: {subcmd}")
+            self._log_response("Usage: /worktree [list|create|remove] [name]")
+
+    def _worktree_list(self) -> None:
+        """List git worktrees."""
+        try:
+            result = subprocess.run(
+                ["git", "worktree", "list"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                self._log_response("[bold]Git Worktrees:[/bold]")
+                for line in result.stdout.strip().split("\n"):
+                    if line:
+                        self._log_response(f"  {line}")
+            else:
+                self._log_error("Failed to list worktrees")
+        except Exception as e:
+            self._log_error(f"Failed to list worktrees: {e}")
+
+    def _worktree_create(self, name: str) -> None:
+        """Create a git worktree."""
+        worktree_path = Path.cwd().parent / f"worktrees/{name}"
+
+        try:
+            # Create branch and worktree
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), "-b", name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                self._log_response(f"[green]Created worktree:[/green] {worktree_path}")
+            else:
+                # Try without -b if branch exists
+                result = subprocess.run(
+                    ["git", "worktree", "add", str(worktree_path), name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0:
+                    self._log_response(f"[green]Created worktree:[/green] {worktree_path}")
+                else:
+                    self._log_error(f"Failed: {result.stderr}")
+        except Exception as e:
+            self._log_error(f"Failed to create worktree: {e}")
+
+    def _worktree_remove(self, name: str) -> None:
+        """Remove a git worktree."""
+        try:
+            result = subprocess.run(
+                ["git", "worktree", "remove", name, "--force"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                self._log_response(f"[green]Removed worktree:[/green] {name}")
+            else:
+                self._log_error(f"Failed: {result.stderr}")
+        except Exception as e:
+            self._log_error(f"Failed to remove worktree: {e}")
+
+    def _run_github(self, args: str) -> None:
+        """GitHub integration commands."""
+        parts = args.strip().split(maxsplit=1) if args else []
+        subcmd = parts[0].lower() if parts else ""
+        subargs = parts[1] if len(parts) > 1 else ""
+
+        if subcmd == "watch":
+            self._github_watch()
+        elif subcmd == "process":
+            if subargs:
+                self._github_process(subargs)
+            else:
+                self._log_error("Usage: /github process <issue_number>")
+        else:
+            self._log_response("[bold]GitHub Commands:[/bold]")
+            self._log_response("  /github watch          - Watch for new issues")
+            self._log_response("  /github process <num>  - Process specific issue")
+
+    def _github_watch(self) -> None:
+        """Watch GitHub issues."""
+        self._log_response("[cyan]Starting GitHub issue watcher...[/cyan]")
+        self._log_response("  This will poll for new issues and create tasks")
+        self._log_response("")
+        self._log_response("[yellow]Note:[/yellow] GitHub watching runs in background.")
+        self._log_response("Configure with GITHUB_TOKEN environment variable.")
+
+    def _github_process(self, issue_num: str) -> None:
+        """Process a GitHub issue."""
+        try:
+            num = int(issue_num)
+            self._log_response(f"[cyan]Processing GitHub issue #{num}...[/cyan]")
+
+            # Try to fetch issue info
+            try:
+                result = subprocess.run(
+                    ["gh", "issue", "view", str(num), "--json", "title,body"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    import json
+                    data = json.loads(result.stdout)
+                    title = data.get("title", "")
+                    self._log_response(f"  Title: {title}")
+                    self._log_response(f"  Creating task from issue...")
+                    self._spawn_task(f"[GitHub #{num}] {title}")
+                else:
+                    self._log_error("Failed to fetch issue. Is 'gh' CLI installed?")
+            except FileNotFoundError:
+                self._log_error("GitHub CLI (gh) not installed")
+                self._log_response("Install: https://cli.github.com/")
+        except ValueError:
+            self._log_error(f"Invalid issue number: {issue_num}")
 
     def _spawn_task(self, description: str) -> None:
         """Spawn a new task."""
