@@ -281,6 +281,13 @@ async def run_daemon(
         from ..notifications import NotificationHandler
         notifier = NotificationHandler()
         daemon.subscribe(notifier.on_event)
+    
+    # Webhooks (from environment)
+    from ..webhooks import load_webhook_from_env
+    webhook_handler = load_webhook_from_env()
+    if webhook_handler:
+        daemon.subscribe(webhook_handler.on_event)
+        print(f"[cron] 🔗 Webhook configured")
 
     # Setup signal handlers
     loop = asyncio.get_event_loop()

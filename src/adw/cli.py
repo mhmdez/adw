@@ -885,6 +885,95 @@ def run(
         console.print("[yellow]Daemon stopped by user[/yellow]")
 
 
+@main.group()
+def webhook() -> None:
+    """Webhook management commands.
+    
+    Configure webhooks to get Slack/Discord/HTTP notifications
+    when tasks complete or fail.
+    """
+    pass
+
+
+@webhook.command("test")
+@click.argument("url")
+@click.option(
+    "--event",
+    "-e",
+    type=click.Choice(["completed", "failed", "started"]),
+    default="completed",
+    help="Event type to simulate",
+)
+def webhook_test(url: str, event: str) -> None:
+    """Test a webhook URL.
+    
+    Sends a test event to verify your webhook is working.
+    
+    \b
+    Examples:
+        adw webhook test https://hooks.slack.com/services/...
+        adw webhook test https://discord.com/api/webhooks/... -e failed
+    """
+    from .webhooks import WebhookConfig, detect_webhook_type, send_webhook
+    
+    webhook_type = detect_webhook_type(url)
+    config = WebhookConfig(
+        url=url,
+        type=webhook_type,
+        events=["task_started", "task_completed", "task_failed"],
+    )
+    
+    event_name = f"task_{event}"
+    test_data = {
+        "adw_id": "test1234",
+        "description": "This is a test event from ADW CLI",
+        "error": "Simulated failure" if event == "failed" else None,
+        "return_code": 1 if event == "failed" else 0,
+    }
+    
+    console.print(f"[dim]Detected type: {webhook_type.value}[/dim]")
+    console.print(f"[dim]Sending {event_name} event...[/dim]")
+    
+    success = send_webhook(config, event_name, test_data)
+    
+    if success:
+        console.print(f"[green]✓ Webhook sent successfully[/green]")
+    else:
+        console.print(f"[red]✗ Failed to send webhook[/red]")
+        console.print("[dim]Check the URL and try again[/dim]")
+
+
+@webhook.command("show")
+def webhook_show() -> None:
+    """Show current webhook configuration.
+    
+    Displays webhook URL from environment variable (ADW_WEBHOOK_URL).
+    """
+    import os
+    
+    url = os.environ.get("ADW_WEBHOOK_URL")
+    events = os.environ.get("ADW_WEBHOOK_EVENTS", "task_completed,task_failed")
+    
+    if not url:
+        console.print("[yellow]No webhook configured[/yellow]")
+        console.print()
+        console.print("[dim]To configure, set environment variables:[/dim]")
+        console.print("  [cyan]export ADW_WEBHOOK_URL='https://...'[/cyan]")
+        console.print("  [cyan]export ADW_WEBHOOK_EVENTS='task_completed,task_failed'[/cyan]")
+        return
+    
+    from .webhooks import detect_webhook_type
+    
+    webhook_type = detect_webhook_type(url)
+    
+    # Mask URL for security
+    masked = url[:30] + "..." if len(url) > 35 else url
+    
+    console.print(f"[bold]URL:[/bold] {masked}")
+    console.print(f"[bold]Type:[/bold] {webhook_type.value}")
+    console.print(f"[bold]Events:[/bold] {events}")
+
+
 @main.command()
 @click.option(
     "--sound",
