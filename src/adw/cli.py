@@ -801,11 +801,17 @@ def github_process(issue_number: int, dry_run: bool) -> None:
     is_flag=True,
     help="Show eligible tasks without executing them",
 )
+@click.option(
+    "--no-notifications",
+    is_flag=True,
+    help="Disable desktop notifications",
+)
 def run(
     poll_interval: float,
     max_concurrent: int,
     tasks_file: Path | None,
     dry_run: bool,
+    no_notifications: bool,
 ) -> None:
     """Start autonomous task execution daemon.
 
@@ -871,11 +877,62 @@ def run(
                 tasks_file=tasks_path,
                 poll_interval=poll_interval,
                 max_concurrent=max_concurrent,
+                notifications=not no_notifications,
             )
         )
     except KeyboardInterrupt:
         console.print()
         console.print("[yellow]Daemon stopped by user[/yellow]")
+
+
+@main.command()
+@click.option(
+    "--sound",
+    "-s",
+    type=click.Choice(["glass", "basso", "ping", "pop", "hero", "none"]),
+    default="glass",
+    help="Notification sound (default: glass)",
+)
+@click.argument("message", required=False, default="Test notification from ADW")
+def notify(sound: str, message: str) -> None:
+    """Test desktop notifications.
+    
+    Sends a test notification to verify macOS notifications are working.
+    
+    \b
+    Examples:
+        adw notify                          # Default test
+        adw notify "Task completed!"        # Custom message
+        adw notify -s basso "Failed!"       # With error sound
+    """
+    from .notifications import send_notification, NotificationSound, is_macos
+    
+    if not is_macos():
+        console.print("[red]Desktop notifications are only supported on macOS[/red]")
+        return
+    
+    sound_map = {
+        "glass": NotificationSound.GLASS,
+        "basso": NotificationSound.BASSO,
+        "ping": NotificationSound.PING,
+        "pop": NotificationSound.POP,
+        "hero": NotificationSound.HERO,
+        "none": NotificationSound.NONE,
+    }
+    
+    console.print(f"[dim]Sending notification: {message}[/dim]")
+    
+    success = send_notification(
+        title="🔔 ADW Notification",
+        message=message,
+        sound=sound_map.get(sound, NotificationSound.GLASS),
+    )
+    
+    if success:
+        console.print("[green]✓ Notification sent[/green]")
+    else:
+        console.print("[red]✗ Failed to send notification[/red]")
+        console.print("[dim]Check System Preferences > Notifications[/dim]")
 
 
 if __name__ == "__main__":

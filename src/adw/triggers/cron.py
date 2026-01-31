@@ -242,6 +242,7 @@ async def run_daemon(
     tasks_file: Path | None = None,
     poll_interval: float = 5.0,
     max_concurrent: int = 3,
+    notifications: bool = True,
 ) -> None:
     """Run the cron daemon.
 
@@ -249,6 +250,7 @@ async def run_daemon(
         tasks_file: Path to tasks.md
         poll_interval: Seconds between polls
         max_concurrent: Max simultaneous agents
+        notifications: Enable desktop notifications
     """
     config = CronConfig(
         tasks_file=tasks_file or Path("tasks.md"),
@@ -273,6 +275,12 @@ async def run_daemon(
             print(f"[cron] ⚠️ Error: {data['error']}")
 
     daemon.subscribe(on_event)
+    
+    # Desktop notifications (macOS)
+    if notifications:
+        from ..notifications import NotificationHandler
+        notifier = NotificationHandler()
+        daemon.subscribe(notifier.on_event)
 
     # Setup signal handlers
     loop = asyncio.get_event_loop()
@@ -314,6 +322,11 @@ def main() -> None:
         default=3,
         help="Max simultaneous agents",
     )
+    parser.add_argument(
+        "--no-notifications",
+        action="store_true",
+        help="Disable desktop notifications",
+    )
 
     args = parser.parse_args()
 
@@ -322,6 +335,7 @@ def main() -> None:
             tasks_file=args.tasks_file,
             poll_interval=args.poll_interval,
             max_concurrent=args.max_concurrent,
+            notifications=not args.no_notifications,
         )
     )
 
