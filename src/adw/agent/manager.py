@@ -77,11 +77,13 @@ class AgentManager:
         env = os.environ.copy()
         env["ADW_ID"] = adw_id
 
+        # Use DEVNULL for stdout to avoid pipe buffer deadlock
+        # Workflows write their own output files, we don't need stdout
         process = subprocess.Popen(
             cmd,
             env=env,
             start_new_session=True,  # Survives parent death
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
 
