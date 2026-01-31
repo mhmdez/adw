@@ -9,7 +9,7 @@
 
 [✅, 0885689d] Create src/adw/agent/models.py with Pydantic data models {opus}
 [✅, 120c27d2] Create src/adw/agent/utils.py with ADW ID generation and helpers
-[⏰] Create src/adw/agent/executor.py with Claude Code execution
+[✅, db260d24] Create src/adw/agent/executor.py with Claude Code execution
 [⏰] Create src/adw/agent/state.py with persistent state manager
 [⏰] Create src/adw/agent/__init__.py exporting all modules
 [⏰] Create tests/test_agent/ with unit tests for foundation
@@ -21,7 +21,7 @@
 
 [✅, 877f7075] Update pyproject.toml with textual and watchfiles dependencies
 [✅, 55cf7cb5] Create src/adw/tui/__init__.py package
-[⏰] Create src/adw/tui/styles.tcss stylesheet
+[✅, a645c9c3] Create src/adw/tui/styles.tcss stylesheet
 [⏰] Create src/adw/tui/widgets/status_bar.py widget
 [⏰] Create src/adw/tui/app.py with basic Textual app shell
 [⏰] Update src/adw/cli.py to launch TUI as default command
@@ -33,7 +33,7 @@
 
 [✅, 7dff1da0] Create src/adw/agent/task_parser.py to parse tasks.md
 [✅, 0ad90e90] Create src/adw/agent/task_updater.py for atomic status updates
-[⏰] Create src/adw/tui/state.py with reactive AppState
+[✅, 7c99f459] Create src/adw/tui/state.py with reactive AppState
 [⏰] Create src/adw/tui/widgets/task_list.py widget
 [⏰] Create src/adw/tui/widgets/task_detail.py widget
 [⏰] Update src/adw/tui/app.py to use real task widgets
@@ -45,7 +45,7 @@
 
 [✅, b6ebab17] Create src/adw/agent/manager.py for process management {opus}
 [✅, 6b4f4182] Create src/adw/workflows/__init__.py package
-[⏰] Create src/adw/workflows/simple.py (build-update workflow)
+[✅, a5e05f50] Create src/adw/workflows/simple.py (build-update workflow)
 [⏰] Create src/adw/workflows/standard.py (plan-implement-update) {opus}
 [⏰] Update src/adw/tui/app.py with agent manager integration
 [⏰] Add new task spawning from TUI
@@ -57,7 +57,7 @@
 
 [✅, cad483ef] Create src/adw/tui/log_watcher.py with watchfiles
 [✅, f048a6ce] Create src/adw/tui/log_formatter.py for event formatting
-[⏰] Create src/adw/tui/log_buffer.py for buffering
+[✅, 3e2eaef6] Create src/adw/tui/log_buffer.py for buffering
 [⏰] Create src/adw/tui/widgets/log_viewer.py widget
 [⏰] Update src/adw/tui/app.py with log watcher integration
 [⏰] Verify Phase 5: Live logs stream to TUI when agents run
@@ -68,7 +68,7 @@
 
 [✅, af23639b] Create src/adw/protocol/messages.py with message models
 [✅, e8889a66] Create .claude/hooks/check_messages.py hook
-[⏰] Update src/adw/tui/widgets/status_bar.py for message input
+[✅, ac5c2a17] Update src/adw/tui/widgets/status_bar.py for message input
 [⏰] Wire message submission to write to agent message file
 [⏰] Verify Phase 6: Can send message to running agent
 
@@ -78,7 +78,7 @@
 
 [✅, ff660f13] Create src/adw/triggers/__init__.py package
 [✅, 0050c905] Create src/adw/triggers/cron.py daemon {opus}
-[⏰] Add dependency checking for blocked tasks
+[✅, 4a334df5] Add dependency checking for blocked tasks
 [⏰] Add concurrent task limiting
 [⏰] Add CLI command: adw run
 [⏰] Verify Phase 7: adw run picks up and executes pending tasks
@@ -89,7 +89,7 @@
 
 [✅, c662aa37] Create src/adw/agent/worktree.py for git worktree management
 [✅, 6b5bc2b8] Create src/adw/agent/ports.py for port allocation
-[⏰] Create src/adw/agent/environment.py for env isolation
+[✅, a51df2e, 03e166af] Create src/adw/agent/environment.py for env isolation
 [⏰] Add worktree creation to workflows
 [⏰] Add CLI commands: adw worktree list/create/remove
 [⏰] Verify Phase 8: Tasks run in isolated worktrees
