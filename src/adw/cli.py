@@ -23,6 +23,9 @@ from .tasks import TaskStatus, get_tasks_summary, load_tasks
 from .triggers.cron import run_daemon
 from .tui import run_tui
 from .update import check_for_update, run_update
+from .commands.task_commands import add_task, list_tasks, cancel_task, retry_task
+from .commands.monitor_commands import watch_daemon, view_logs
+from .commands.completion import setup_completion, TASK_ID, STATUS_CHOICES
 
 console = Console()
 
@@ -381,6 +384,142 @@ def version_cmd() -> None:
     # Also show Python version
     v = sys.version_info
     console.print(f"Python {v.major}.{v.minor}.{v.micro}")
+
+
+# ============== New Task Management Commands ==============
+
+
+@main.command("add")
+@click.argument("description", nargs=-1, required=True)
+@click.option("--priority", "-p", type=click.Choice(["high", "medium", "low"]), help="Task priority")
+@click.option("--tag", "-t", "tags", multiple=True, help="Add tags (can use multiple times)")
+def add_cmd(description: tuple[str, ...], priority: str | None, tags: tuple[str, ...]) -> None:
+    """Add a new task to tasks.md.
+
+    Quick way to add a task without starting a discussion.
+
+    \\b
+    Examples:
+        adw add "implement user auth"
+        adw add fix login bug --priority high
+        adw add refactor api -t backend -t urgent
+    """
+    desc_str = " ".join(description)
+    add_task(desc_str, priority=priority, tags=list(tags) if tags else None)
+
+
+@main.command("list")
+@click.option("--status", "-s", type=STATUS_CHOICES, help="Filter by status")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show completed tasks too")
+def list_cmd(status: str | None, show_all: bool) -> None:
+    """List all tasks from tasks.md.
+
+    Shows pending and running tasks by default.
+    Use --all to include completed tasks.
+
+    \\b
+    Examples:
+        adw list                 # Show pending & running
+        adw list --all           # Show all including done
+        adw list -s failed       # Show only failed tasks
+        adw list -s running      # Show only running tasks
+    """
+    list_tasks(status_filter=status, show_all=show_all)
+
+
+@main.command("cancel")
+@click.argument("task_id", type=TASK_ID)
+@click.confirmation_option(prompt="Are you sure you want to cancel this task?")
+def cancel_cmd(task_id: str) -> None:
+    """Cancel a task.
+
+    Marks the task as failed with 'Cancelled by user' reason.
+    Use task ID (TASK-001) or ADW ID (abc12345).
+
+    \\b
+    Examples:
+        adw cancel TASK-001
+        adw cancel abc12345
+    """
+    cancel_task(task_id)
+
+
+@main.command("retry")
+@click.argument("task_id", type=TASK_ID)
+def retry_cmd(task_id: str) -> None:
+    """Retry a failed task.
+
+    Resets the task status to pending so it can be picked up again.
+
+    \\b
+    Examples:
+        adw retry TASK-001
+        adw retry abc12345
+    """
+    retry_task(task_id)
+
+
+# ============== Monitoring Commands ==============
+
+
+@main.command("watch")
+@click.option("--once", is_flag=True, help="Show status once and exit")
+def watch_cmd(once: bool) -> None:
+    """Watch daemon activity in real-time.
+
+    Shows running tasks and their status, updating live.
+    Press Ctrl+C to stop.
+
+    \\b
+    Examples:
+        adw watch              # Live watch
+        adw watch --once       # Show status and exit
+    """
+    watch_daemon(follow=not once)
+
+
+@main.command("logs")
+@click.argument("task_id", type=TASK_ID)
+@click.option("--follow", "-f", is_flag=True, help="Follow logs (like tail -f)")
+@click.option("--lines", "-n", type=int, default=50, help="Number of lines to show")
+def logs_cmd(task_id: str, follow: bool, lines: int) -> None:
+    """View logs for a specific task.
+
+    Shows agent output and state for the given task.
+
+    \\b
+    Examples:
+        adw logs TASK-001
+        adw logs abc12345 -f      # Follow logs
+        adw logs TASK-001 -n 100  # Show last 100 lines
+    """
+    view_logs(task_id, follow=follow, lines=lines)
+
+
+# ============== Shell Completion ==============
+
+
+@main.command("completion")
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]), required=False)
+def completion_cmd(shell: str | None) -> None:
+    """Generate shell completion script.
+
+    Outputs a script that enables tab completion for adw commands.
+    Add to your shell config to enable.
+
+    \\b
+    Examples:
+        # Bash (add to ~/.bashrc)
+        eval "$(adw completion bash)"
+
+        # Zsh (add to ~/.zshrc)
+        eval "$(adw completion zsh)"
+
+        # Fish (save to completions)
+        adw completion fish > ~/.config/fish/completions/adw.fish
+    """
+    script = setup_completion(shell)
+    click.echo(script)
 
 
 @main.group()
