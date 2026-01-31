@@ -175,8 +175,15 @@ class ADWApp(App):
             self._log_response(f"[green]Agent {adw_id[:8]} completed[/green]")
             self.state.load_from_tasks_md()
         elif event == "failed":
-            self._log_error(f"Agent {adw_id[:8]} failed")
+            return_code = data.get("return_code", "?")
+            stderr = data.get("stderr", "")
+            self._log_error(f"Agent {adw_id[:8]} failed (exit code: {return_code})")
+            if stderr:
+                for line in stderr.strip().split("\n")[:5]:
+                    self._log_error(f"  {line}")
             self.state.load_from_tasks_md()
+        elif event == "killed":
+            self._log_response(f"[yellow]Agent {adw_id[:8]} killed[/yellow]")
 
     def _on_log_event(self, event: LogEvent) -> None:
         """Handle log event from agents."""
@@ -714,6 +721,10 @@ class ADWApp(App):
 
         self._log_response(f"[cyan]Task {adw_id[:8]} created[/cyan]")
 
+        # Create agents directory for logging
+        agents_dir = Path("agents") / adw_id
+        agents_dir.mkdir(parents=True, exist_ok=True)
+
         # Spawn agent
         try:
             self.agent_manager.spawn_workflow(
@@ -724,6 +735,7 @@ class ADWApp(App):
                 adw_id=adw_id,
             )
             self._log_response(f"[cyan]Agent spawned for task {adw_id[:8]}[/cyan]")
+            self._log_response(f"[dim]Logs: agents/{adw_id}/[/dim]")
         except Exception as e:
             self._log_error(f"Failed to spawn agent: {e}")
 

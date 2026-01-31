@@ -168,11 +168,19 @@ class AgentManager:
         for adw_id, agent in list(self._agents.items()):
             code = agent.process.poll()
             if code is not None:
+                # Capture stderr before removing
+                stderr_msg = ""
+                if agent.process.stderr:
+                    try:
+                        stderr_msg = agent.process.stderr.read().decode()[:500]
+                    except Exception:
+                        pass
+
                 completed.append((adw_id, code))
                 del self._agents[adw_id]
 
                 event = "completed" if code == 0 else "failed"
-                self.notify(event, adw_id, return_code=code)
+                self.notify(event, adw_id, return_code=code, stderr=stderr_msg)
 
         return completed
 
