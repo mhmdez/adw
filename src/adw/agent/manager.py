@@ -62,7 +62,9 @@ class AgentManager:
             ADW ID of spawned agent
         """
         adw_id = adw_id or generate_adw_id()
-        worktree = worktree_name or f"task-{adw_id}"
+        # Sanitize worktree name
+        raw_worktree = worktree_name or f"task-{adw_id}"
+        worktree = raw_worktree.replace(" ", "-").lower()
 
         # Build command
         cmd = [
@@ -77,23 +79,13 @@ class AgentManager:
         env = os.environ.copy()
         env["ADW_ID"] = adw_id
 
-        # Debug logging
-        with open("/tmp/adw_spawn.log", "a") as f:
-            f.write(f"\n[{adw_id}] Spawning command: {cmd}\n")
-            f.write(f"[{adw_id}] Env vars keys: {list(env.keys())}\n")
-
-        # Capture output to files for debugging
-        stdout_path = f"/tmp/adw_{adw_id}.stdout"
-        stderr_path = f"/tmp/adw_{adw_id}.stderr"
-        stdout_f = open(stdout_path, "w")
-        stderr_f = open(stderr_path, "w")
-
+        # Use DEVNULL for stdout to avoid pipe buffer deadlock
         process = subprocess.Popen(
             cmd,
             env=env,
-            start_new_session=True,
-            stdout=stdout_f,
-            stderr=stderr_f,
+            start_new_session=True,  # Survives parent death
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
 
         agent = AgentProcess(
@@ -104,9 +96,6 @@ class AgentManager:
             worktree=worktree,
             model=model,
         )
-        # Store file handles to close later
-        agent._stdout_file = stdout_f
-        agent._stderr_file = stderr_f
 
         self._agents[adw_id] = agent
         self.notify("spawned", adw_id, pid=process.pid, task=task_description)
@@ -186,22 +175,11 @@ class AgentManager:
         for adw_id, agent in list(self._agents.items()):
             code = agent.process.poll()
             if code is not None:
-                # Read stderr from file
+                # Capture stderr before removing
                 stderr_msg = ""
-                if hasattr(agent, "_stderr_file") and agent._stderr_file:
+                if agent.process.stderr:
                     try:
-                        # Flush and close first
-                        agent._stderr_file.close()
-                        # Read content
-                        with open(agent._stderr_file.name, "r") as f:
-                            stderr_msg = f.read()[:1000]
-                    except Exception:
-                        pass
-
-                # Close stdout file if it exists
-                if hasattr(agent, "_stdout_file") and agent._stdout_file:
-                    try:
-                        agent._stdout_file.close()
+                        stderr_msg = agent.process.stderr.read().decode()[:500]
                     except Exception:
                         pass
 

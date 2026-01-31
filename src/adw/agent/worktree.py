@@ -83,7 +83,7 @@ def create_worktree(
         Path to created worktree, or None on failure.
     """
     worktree_path = get_worktree_path(worktree_name)
-    branch = branch_name or f"adw-{worktree_name}"
+    branch = branch_name or f"adw-{worktree_name.replace(' ', '-').lower()}"
 
     # Check if already exists
     if worktree_exists(worktree_name):
