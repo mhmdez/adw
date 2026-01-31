@@ -154,7 +154,7 @@
 [✅, 793a7295] Test complete workflow: adw new "test feature" through PR
 [✅, 50e5ff7f] Update README.md with new features
 [✅, bac4d5de] Update CLAUDE.md with ADW orchestration docs
-[🟡, a2ecdc7d] Tag release v0.2.0
+[✅, a2ecdc7d] Tag release v0.2.0
 
 ---
 
