@@ -221,9 +221,20 @@ class ADWApp(App):
             self._handle_command(message)
             return
 
-        # Otherwise treat as new task
-        self._log_response("Creating task and spawning agent...")
-        self._spawn_task(message)
+        # Detect if it's a question or a task
+        # Questions typically start with question words or end with ?
+        question_starters = ("what", "how", "why", "where", "when", "who", "which", "can", "could", "would", "is", "are", "do", "does", "explain", "describe", "tell", "show")
+        is_question = (
+            message.endswith("?") or
+            message.lower().startswith(question_starters)
+        )
+
+        if is_question:
+            self._ask_question(message)
+        else:
+            self._log_response("Creating task and spawning agent...")
+            self._log_response("[dim]Tip: Use /ask for questions, or /do to explicitly create a task[/dim]")
+            self._spawn_task(message)
 
     def _handle_command(self, text: str) -> None:
         """Handle a slash command."""
@@ -269,6 +280,16 @@ class ADWApp(App):
             self._run_worktree(args)
         elif cmd == "github":
             self._run_github(args)
+        elif cmd == "ask":
+            if args:
+                self._ask_question(args)
+            else:
+                self._log_error("Usage: /ask <question>")
+        elif cmd == "do" or cmd == "task":
+            if args:
+                self._spawn_task(args)
+            else:
+                self._log_error("Usage: /do <task description>")
         else:
             self._log_error(f"Unknown command: /{cmd}. Type /help for commands.")
 
@@ -283,8 +304,12 @@ class ADWApp(App):
         self._log_response("  /version       - Show version")
         self._log_response("  /update        - Check for updates")
         self._log_response("")
+        self._log_response("[cyan]Chat:[/cyan]")
+        self._log_response("  /ask <question>- Ask Claude a question")
+        self._log_response("")
         self._log_response("[cyan]Tasks:[/cyan]")
-        self._log_response("  /new <desc>    - Create task and spawn agent")
+        self._log_response("  /do <desc>     - Create task and spawn agent")
+        self._log_response("  /new <desc>    - Same as /do")
         self._log_response("  /tasks         - List all tasks")
         self._log_response("  /verify [id]   - Verify completed task")
         self._log_response("  /approve [spec]- Approve spec, create tasks")
@@ -306,7 +331,7 @@ class ADWApp(App):
         self._log_response("  /clear         - Clear screen")
         self._log_response("  /quit          - Exit ADW")
         self._log_response("")
-        self._log_response("[dim]Or just type a task description to create and run it[/dim]")
+        self._log_response("[dim]Or just type: questions get answered, tasks get executed[/dim]")
 
     def _show_status(self) -> None:
         """Show status."""
@@ -675,6 +700,44 @@ class ADWApp(App):
         self._log_response("")
         self._log_response("[yellow]Note:[/yellow] GitHub watching runs in background.")
         self._log_response("Configure with GITHUB_TOKEN environment variable.")
+
+    def _ask_question(self, question: str) -> None:
+        """Ask Claude a question and display the response."""
+        self._log_response("[dim]Thinking...[/dim]")
+
+        try:
+            # Use Claude CLI to answer the question
+            # Include project context if CLAUDE.md exists
+            context = ""
+            claude_md = Path.cwd() / "CLAUDE.md"
+            if claude_md.exists():
+                context = f"Project context from CLAUDE.md:\n{claude_md.read_text()[:2000]}\n\n"
+
+            prompt = f"{context}Question: {question}\n\nProvide a concise, helpful answer."
+
+            result = subprocess.run(
+                ["claude", "--print", prompt],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode == 0 and result.stdout:
+                # Display response
+                response = result.stdout.strip()
+                for line in response.split("\n"):
+                    self._log_response(line)
+            else:
+                self._log_error("Failed to get response from Claude")
+                if result.stderr:
+                    self._log_error(f"  {result.stderr[:200]}")
+
+        except FileNotFoundError:
+            self._log_error("Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code")
+        except subprocess.TimeoutExpired:
+            self._log_error("Request timed out")
+        except Exception as e:
+            self._log_error(f"Error: {e}")
 
     def _github_process(self, issue_num: str) -> None:
         """Process a GitHub issue."""
