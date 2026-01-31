@@ -38,6 +38,10 @@ class CronDaemon:
 
     Monitors tasks.md for eligible tasks and spawns agents
     to execute them within configured concurrency limits.
+    
+    Supports pause/resume via signals:
+    - SIGUSR1: Pause (stop spawning new tasks)
+    - SIGUSR2: Resume (continue spawning)
     """
 
     def __init__(
@@ -48,9 +52,11 @@ class CronDaemon:
         self.config = config or CronConfig()
         self.manager = manager or AgentManager()
         self._running = False
+        self._paused = False
         self._shutdown_event = asyncio.Event()
         self._callbacks: list[Callable] = []
         self._task_agents: dict[str, str] = {}  # task description -> adw_id
+        self._state_manager = None  # Set during start
 
     def subscribe(self, callback: Callable) -> None:
         """Subscribe to daemon events."""
@@ -172,20 +178,61 @@ class CronDaemon:
 
         return completed
 
+    def pause(self) -> None:
+        """Pause task spawning (running tasks continue)."""
+        if not self._paused:
+            self._paused = True
+            if self._state_manager:
+                self._state_manager.pause()
+            self.notify("paused")
+
+    def resume(self) -> None:
+        """Resume task spawning."""
+        if self._paused:
+            self._paused = False
+            if self._state_manager:
+                self._state_manager.resume()
+            self.notify("resumed")
+
+    @property
+    def is_paused(self) -> bool:
+        """Check if daemon is paused."""
+        return self._paused
+
     async def _poll_loop(self) -> None:
         """Main polling loop."""
         while self._running:
             try:
                 # Check for completed agents
-                self._check_completions()
+                completed = self._check_completions()
+                
+                # Update state manager
+                if self._state_manager:
+                    for adw_id, code, _ in completed:
+                        if code == 0:
+                            self._state_manager.task_completed(adw_id)
+                        else:
+                            self._state_manager.task_failed(adw_id)
 
-                # Spawn new tasks if slots available
-                if self.config.auto_start:
+                # Spawn new tasks if slots available AND not paused
+                if self.config.auto_start and not self._paused:
                     while self.manager.count < self.config.max_concurrent:
                         task = self._pick_next_task()
                         if not task:
                             break
                         self._spawn_task(task)
+                        
+                        # Update state manager
+                        if self._state_manager:
+                            self._state_manager.add_task({
+                                "adw_id": self._task_agents.get(task.description),
+                                "description": task.description[:100],
+                            })
+
+                # Update pending count
+                if self._state_manager:
+                    eligible = get_eligible_tasks(self.config.tasks_file)
+                    self._state_manager.update_pending(len(eligible))
 
                 # Wait for next poll or shutdown
                 try:
@@ -207,10 +254,21 @@ class CronDaemon:
             return
 
         self._running = True
+        self._paused = False
         self._shutdown_event.clear()
+        
+        # Initialize state manager
+        from ..daemon_state import DaemonStateManager
+        self._state_manager = DaemonStateManager()
+        self._state_manager.start()
+        
         self.notify("started")
 
         await self._poll_loop()
+        
+        # Cleanup
+        if self._state_manager:
+            self._state_manager.stop()
 
         self.notify("stopped")
 
@@ -271,6 +329,10 @@ async def run_daemon(
             print(f"[cron] ❌ Failed: {data['description']} - {data.get('error') or data.get('return_code')}")
             if stderr:
                 print(f"[cron]    stderr: {stderr}")
+        elif event == "paused":
+            print(f"[cron] ⏸️  Paused - no new tasks will start")
+        elif event == "resumed":
+            print(f"[cron] ▶️  Resumed - continuing task execution")
         elif event == "error":
             print(f"[cron] ⚠️ Error: {data['error']}")
 
@@ -294,9 +356,19 @@ async def run_daemon(
 
     def signal_handler():
         daemon.stop()
+    
+    def pause_handler():
+        daemon.pause()
+    
+    def resume_handler():
+        daemon.resume()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, signal_handler)
+    
+    # SIGUSR1 = pause, SIGUSR2 = resume
+    loop.add_signal_handler(signal.SIGUSR1, pause_handler)
+    loop.add_signal_handler(signal.SIGUSR2, resume_handler)
 
     print(f"[cron] Starting daemon (poll={poll_interval}s, max={max_concurrent})")
     print(f"[cron] Watching: {config.tasks_file}")

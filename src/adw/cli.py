@@ -496,6 +496,123 @@ def logs_cmd(task_id: str, follow: bool, lines: int) -> None:
     view_logs(task_id, follow=follow, lines=lines)
 
 
+# ============== Daemon Control ==============
+
+
+@main.command("pause")
+def pause_cmd() -> None:
+    """Pause the running daemon.
+
+    Stops spawning new tasks while letting running tasks complete.
+    Use 'adw resume' to continue.
+
+    \\b
+    Examples:
+        adw pause    # Pause task spawning
+    """
+    from .daemon_state import read_state, request_pause, DaemonStatus
+    
+    state = read_state()
+    
+    if state.status == DaemonStatus.STOPPED:
+        console.print("[yellow]Daemon is not running[/yellow]")
+        console.print("[dim]Start it with 'adw run'[/dim]")
+        return
+    
+    if state.status == DaemonStatus.PAUSED:
+        console.print("[yellow]Daemon is already paused[/yellow]")
+        return
+    
+    if request_pause():
+        console.print("[green]⏸️  Daemon paused[/green]")
+        console.print("[dim]Running tasks will continue. No new tasks will start.[/dim]")
+        console.print("[dim]Use 'adw resume' to continue.[/dim]")
+    else:
+        console.print("[red]Failed to pause daemon[/red]")
+
+
+@main.command("resume")
+def resume_cmd() -> None:
+    """Resume a paused daemon.
+
+    Continues spawning new tasks after a pause.
+
+    \\b
+    Examples:
+        adw resume    # Resume task spawning
+    """
+    from .daemon_state import read_state, request_resume, DaemonStatus
+    
+    state = read_state()
+    
+    if state.status == DaemonStatus.STOPPED:
+        console.print("[yellow]Daemon is not running[/yellow]")
+        console.print("[dim]Start it with 'adw run'[/dim]")
+        return
+    
+    if state.status == DaemonStatus.RUNNING:
+        console.print("[yellow]Daemon is already running[/yellow]")
+        return
+    
+    if request_resume():
+        console.print("[green]▶️  Daemon resumed[/green]")
+    else:
+        console.print("[red]Failed to resume daemon[/red]")
+
+
+@main.command("status")
+def status_cmd() -> None:
+    """Show daemon status.
+
+    Displays whether the daemon is running, paused, or stopped,
+    along with task statistics.
+
+    \\b
+    Examples:
+        adw status
+    """
+    from .daemon_state import read_state, DaemonStatus
+    
+    state = read_state()
+    
+    # Status indicator
+    if state.status == DaemonStatus.RUNNING:
+        status_text = "[green]● Running[/green]"
+    elif state.status == DaemonStatus.PAUSED:
+        status_text = "[yellow]⏸ Paused[/yellow]"
+    else:
+        status_text = "[dim]○ Stopped[/dim]"
+    
+    console.print(f"[bold]Daemon Status:[/bold] {status_text}")
+    
+    if state.pid:
+        console.print(f"[dim]PID: {state.pid}[/dim]")
+    
+    if state.started_at:
+        console.print(f"[dim]Started: {state.started_at}[/dim]")
+    
+    if state.paused_at:
+        console.print(f"[dim]Paused: {state.paused_at}[/dim]")
+    
+    console.print()
+    
+    # Task stats
+    console.print("[bold]Tasks:[/bold]")
+    console.print(f"  Running:   {len(state.running_tasks)}")
+    console.print(f"  Pending:   {state.pending_count}")
+    console.print(f"  Completed: {state.completed_count}")
+    console.print(f"  Failed:    {state.failed_count}")
+    
+    # Show running tasks
+    if state.running_tasks:
+        console.print()
+        console.print("[bold]Currently Running:[/bold]")
+        for task in state.running_tasks:
+            adw_id = task.get("adw_id", "?")[:8]
+            desc = task.get("description", "Unknown")[:50]
+            console.print(f"  [{adw_id}] {desc}")
+
+
 # ============== Shell Completion ==============
 
 
