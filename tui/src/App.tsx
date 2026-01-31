@@ -207,6 +207,10 @@ export function App({ cwd }: AppProps) {
           <Text color="magenta" bold>✨ AI Developer Workflow</Text>
           <Text dimColor> — Ship features while you sleep</Text>
         </Box>
+        <Box>
+          <Text dimColor>by </Text>
+          <Text color="blue">mhmdez@me.com</Text>
+        </Box>
       </Box>
 
       {/* Separator */}
