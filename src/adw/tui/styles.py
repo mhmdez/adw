@@ -138,13 +138,14 @@ StatusLine > #status-info {
     padding: 0 1;
 }
 
-/* Animations */
+/* Animations - note: Textual doesn't support CSS animations */
 .spinner {
     color: #00D4FF;
 }
 
 .pulse {
-    animation: pulse 1s infinite;
+    color: #00D4FF;
+    text-style: bold;
 }
 
 /* Modals */
@@ -239,17 +240,6 @@ HEADER_SMALL = """
 }
 """
 
-# Extra animations for modern terminals
-ANIMATIONS_CSS = """
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-}
-
-@keyframes glow {
-    0% { text-style: none; }
-    50% { text-style: bold; }
-    100% { text-style: none; }
-}
-"""
+# Note: Textual doesn't support CSS @keyframes animations
+# Animations are done via reactive properties and set_interval() instead
+ANIMATIONS_CSS = ""
