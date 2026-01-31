@@ -26,10 +26,12 @@ from ..agent.models import TaskStatus
 from ..specs import SpecLoader, Spec, SpecStatus
 from ..workflow import WorkflowManager, TaskPhase
 from .. import __version__
+from .branding import COLORS, SPINNERS, get_loading_message, gradient_text
+from .styles import APP_CSS
 
 
-# Spinner frames
-SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+# Spinner frames - now using fun spinners
+SPINNER = SPINNERS["dots"]
 
 
 class TaskInbox(Vertical):
@@ -39,22 +41,31 @@ class TaskInbox(Vertical):
     TaskInbox {
         width: 100%;
         height: auto;
-        max-height: 10;
+        max-height: 12;
         padding: 0 1;
+        background: #111;
+        border: round #222;
     }
 
     TaskInbox > #inbox-header {
         height: 1;
-        color: #888;
+        color: #00D4FF;
+        text-style: bold;
+        padding-bottom: 1;
     }
 
     TaskInbox > #task-container {
         height: auto;
-        max-height: 8;
+        max-height: 10;
     }
 
     .task-item {
         height: 1;
+        padding: 0 1;
+    }
+    
+    .task-item:hover {
+        background: #1a1a1a;
     }
     """
 
@@ -67,7 +78,7 @@ class TaskInbox(Vertical):
         self._has_running = False
 
     def compose(self) -> ComposeResult:
-        yield Static("TASKS", id="inbox-header")
+        yield Static(f"[bold {COLORS['primary']}]📋 TASKS[/]", id="inbox-header")
         yield Container(id="task-container")
 
     def on_mount(self) -> None:
@@ -239,28 +250,34 @@ class StatusLine(Horizontal):
     DEFAULT_CSS = """
     StatusLine {
         dock: bottom;
-        height: 1;
-        padding: 0 1;
+        height: 3;
+        padding: 0 2;
+        background: #111;
+        border-top: solid #222;
     }
 
     StatusLine > #prompt {
-        width: 2;
-        color: #4ec9b0;
+        width: 3;
+        color: #00D4FF;
+        text-style: bold;
     }
 
     StatusLine > Input {
         width: 1fr;
         border: none;
-        padding: 0;
+        padding: 0 1;
+        background: #0a0a0a;
     }
 
     StatusLine > Input:focus {
         border: none;
+        background: #151515;
     }
 
     StatusLine > #status-info {
         width: auto;
         color: #666;
+        padding: 0 1;
     }
     """
 
@@ -319,54 +336,7 @@ class ADWApp(App):
     ENABLE_COMMAND_PALETTE = False
     DESIGN_SYSTEM = ""  # Disable design system for terminal-native look
 
-    CSS = """
-    * {
-        scrollbar-size: 0 0;
-    }
-
-    Screen {
-        background: ansi_default;
-    }
-
-    #main-header {
-        dock: top;
-        height: 1;
-        padding: 0 1;
-    }
-
-    #main-container {
-        height: 1fr;
-    }
-
-    Input {
-        border: none;
-        background: ansi_default;
-    }
-
-    Input:focus {
-        border: none;
-    }
-
-    Static {
-        background: ansi_default;
-    }
-
-    Container {
-        background: ansi_default;
-    }
-
-    Vertical {
-        background: ansi_default;
-    }
-
-    Horizontal {
-        background: ansi_default;
-    }
-
-    RichLog {
-        background: ansi_default;
-    }
-    """
+    CSS = APP_CSS
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
@@ -395,7 +365,9 @@ class ADWApp(App):
         self.log_watcher.subscribe_questions(self._on_question_event)
 
     def compose(self) -> ComposeResult:
-        yield Static(f"[bold]ADW[/] [dim]v{__version__}[/]", id="main-header")
+        # Beautiful header with gradient
+        header_text = f"[bold {COLORS['primary']}]⚡ ADW[/] [dim]v{__version__}[/]  [dim]│[/]  [italic {COLORS['muted']}]Ship features while you sleep[/]"
+        yield Static(header_text, id="main-header")
 
         with Vertical(id="main-container"):
             yield TaskInbox()
@@ -409,10 +381,15 @@ class ADWApp(App):
         self.set_interval(2.0, self._poll_agents)
         self.run_worker(self.log_watcher.watch())
 
-        # Welcome message
+        # Beautiful welcome message
         detail = self.query_one(DetailPanel)
-        detail.add_message("Welcome to ADW - AI Developer Workflow", "bold cyan")
-        detail.add_message("Type /help for commands, /new <task> to create a task", "dim")
+        detail.add_message(f"[bold {COLORS['primary']}]✨ Welcome to ADW[/]")
+        detail.add_message(f"[{COLORS['muted']}]AI Developer Workflow - Your autonomous coding partner[/]")
+        detail.add_message("")
+        detail.add_message(f"[{COLORS['accent']}]Quick Start:[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/new <task>[/] — Create a new task")
+        detail.add_message(f"  [{COLORS['primary']}]/discuss <idea>[/] — Interactive planning")
+        detail.add_message(f"  [{COLORS['primary']}]/help[/] — All commands")
         detail.add_message("")
 
         # Focus input
@@ -904,42 +881,41 @@ class ADWApp(App):
             detail.add_message("[dim]Type /help for available commands[/dim]")
 
     def _show_help(self) -> None:
-        """Show help."""
+        """Show beautiful help."""
         detail = self.query_one(DetailPanel)
-        help_text = """
-[bold cyan]Commands:[/]
-
-[bold]Tasks:[/]
-  /new <desc>     Create and run a task
-  /tasks          Refresh task list
-  /kill [id]      Kill running agent
-
-[bold]Chat:[/]
-  /ask <question> Ask Claude a question
-  /questions      List pending agent questions
-  Just type a question ending with ?
-
-[bold]System:[/]
-  /init           Initialize ADW in project
-  /doctor         Check installation health
-  /status         Show system status
-  /run            Start autonomous daemon
-  /stop           Stop daemon
-
-[bold]Other:[/]
-  /clear          Clear logs
-  /version        Show version
-  /quit           Exit
-
-[bold]Keyboard:[/]
-  n       New task
-  r       Refresh
-  Tab     Switch panels
-  ?       This help
-  Ctrl+C  Quit
-"""
-        for line in help_text.strip().split("\n"):
-            detail.add_message(line)
+        
+        detail.add_message(f"[bold {COLORS['primary']}]⚡ ADW Commands[/]\n")
+        
+        detail.add_message(f"[bold {COLORS['accent']}]📋 Tasks[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/new <desc>[/]     Create and run a task")
+        detail.add_message(f"  [{COLORS['primary']}]/discuss <idea>[/] Interactive planning session")
+        detail.add_message(f"  [{COLORS['primary']}]/tasks[/]          Refresh task list")
+        detail.add_message(f"  [{COLORS['primary']}]/kill [id][/]      Kill running agent")
+        detail.add_message("")
+        
+        detail.add_message(f"[bold {COLORS['accent']}]📄 Specs[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/specs[/]          List all specs")
+        detail.add_message(f"  [{COLORS['primary']}]/approve <id>[/]   Approve a spec")
+        detail.add_message(f"  [{COLORS['primary']}]/reject <id>[/]    Reject a spec")
+        detail.add_message("")
+        
+        detail.add_message(f"[bold {COLORS['accent']}]🔴 Blocked[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/blocked[/]        Show blocked tasks")
+        detail.add_message(f"  [{COLORS['primary']}]/unblock <id>[/]   Unblock a task")
+        detail.add_message("")
+        
+        detail.add_message(f"[bold {COLORS['accent']}]💬 Chat[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/ask <question>[/] Ask Claude anything")
+        detail.add_message(f"  [{COLORS['muted']}]Just type a question ending with ?[/]")
+        detail.add_message("")
+        
+        detail.add_message(f"[bold {COLORS['accent']}]⚙️  System[/]")
+        detail.add_message(f"  [{COLORS['primary']}]/init[/]           Initialize ADW in project")
+        detail.add_message(f"  [{COLORS['primary']}]/run[/]            Start autonomous daemon")
+        detail.add_message(f"  [{COLORS['primary']}]/status[/]         Show system status")
+        detail.add_message("")
+        
+        detail.add_message(f"[{COLORS['muted']}]⌨️  Shortcuts: n=new, r=refresh, ?=help, Ctrl+C=quit[/]")
 
     def _show_status(self) -> None:
         """Show status."""
