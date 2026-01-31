@@ -127,7 +127,18 @@ class TaskInbox(Vertical):
         elif task.status == TaskStatus.FAILED:
             text.append(" ✗ ", style="bold red")
         elif task.status == TaskStatus.BLOCKED:
-            text.append(" ◷ ", style="bold yellow")
+            # Show blocked with reason indicator
+            from .state import BlockedReason
+            reason_icons = {
+                BlockedReason.DEPENDENCY: "⏳",
+                BlockedReason.APPROVAL: "👤",
+                BlockedReason.EXTERNAL: "🔗",
+                BlockedReason.QUESTION: "❓",
+                BlockedReason.ERROR: "⚠️",
+                BlockedReason.MANUAL: "🛑",
+            }
+            icon = reason_icons.get(task.blocked_reason, "◷")
+            text.append(f" {icon} ", style="bold yellow")
         else:
             text.append(" ○ ", style="dim")
 
@@ -148,6 +159,11 @@ class TaskInbox(Vertical):
             text.append(desc, style="green")
         elif task.status == TaskStatus.FAILED:
             text.append(desc, style="red")
+        elif task.status == TaskStatus.BLOCKED:
+            text.append(desc, style="yellow")
+            # Show blocked summary inline
+            if task.blocked_summary:
+                text.append(f" [{task.blocked_summary}]", style="dim yellow italic")
         else:
             text.append(desc)
 
@@ -156,6 +172,8 @@ class TaskInbox(Vertical):
             widget.add_class("-selected")
         if task.is_running:
             widget.add_class("-running")
+        if task.is_blocked:
+            widget.add_class("-blocked")
 
         return widget
 
@@ -419,9 +437,18 @@ class ADWApp(App):
         spec_pending = sum(1 for s in self._specs if s.status == SpecStatus.PENDING)
         status.update_specs(pending=spec_pending)
         
-        if self._pending_questions:
-            count = len(self._pending_questions)
-            status.set_attention(f"❓ {count} question{'s' if count > 1 else ''} pending")
+        # Set attention for questions or blocked tasks
+        blocked_count = sum(1 for t in self.state.tasks.values() if t.is_blocked)
+        question_count = len(self._pending_questions)
+        
+        attention_parts = []
+        if question_count:
+            attention_parts.append(f"❓ {question_count}")
+        if blocked_count:
+            attention_parts.append(f"🔴 {blocked_count} blocked")
+        
+        if attention_parts:
+            status.set_attention(" | ".join(attention_parts))
         else:
             status.set_attention(None)
 
@@ -603,6 +630,112 @@ class ADWApp(App):
         else:
             detail.add_message(f"[red]Failed to reject {spec_id}[/red]")
 
+    def _show_blocked_tasks(self) -> None:
+        """Show all blocked tasks with details."""
+        detail = self.query_one(DetailPanel)
+        from .state import BlockedReason
+        
+        blocked = [t for t in self.state.tasks.values() if t.is_blocked]
+        
+        if not blocked:
+            detail.add_message("[green]No blocked tasks! 🎉[/green]")
+            return
+        
+        detail.add_message(f"[bold yellow]Blocked Tasks ({len(blocked)}):[/bold yellow]")
+        
+        by_reason: dict = {}
+        for task in blocked:
+            reason = task.blocked_reason or BlockedReason.MANUAL
+            if reason not in by_reason:
+                by_reason[reason] = []
+            by_reason[reason].append(task)
+        
+        reason_names = {
+            BlockedReason.DEPENDENCY: "⏳ Waiting on Dependencies",
+            BlockedReason.APPROVAL: "👤 Needs Approval",
+            BlockedReason.EXTERNAL: "🔗 External Blockers",
+            BlockedReason.QUESTION: "❓ Questions Pending",
+            BlockedReason.ERROR: "⚠️  Errors",
+            BlockedReason.MANUAL: "🛑 Manually Blocked",
+        }
+        
+        for reason, tasks in by_reason.items():
+            detail.add_message(f"\n[bold]{reason_names.get(reason, reason.value)}[/bold]")
+            for task in tasks:
+                detail.add_message(f"  {task.display_id}: {task.description[:40]}")
+                if task.blocked_message:
+                    detail.add_message(f"    [dim]{task.blocked_message}[/dim]")
+                if task.blocked_needs:
+                    detail.add_message(f"    [dim]Needs: {', '.join(task.blocked_needs)}[/dim]")
+        
+        detail.add_message("\n[dim]Use /unblock <id> to unblock a task[/dim]")
+
+    def _unblock_task(self, args: str) -> None:
+        """Unblock a task."""
+        detail = self.query_one(DetailPanel)
+        
+        if not args:
+            if self.state.selected_task and self.state.selected_task.is_blocked:
+                args = self.state.selected_task.adw_id
+            else:
+                detail.add_message("[red]Usage: /unblock <task-id>[/red]")
+                detail.add_message("[dim]Or select a blocked task and run /unblock[/dim]")
+                return
+        
+        task_id = args.strip()
+        
+        task = self.state.tasks.get(task_id)
+        if not task:
+            for t in self.state.tasks.values():
+                if t.display_id == task_id or (t.adw_id and t.adw_id.startswith(task_id)):
+                    task = t
+                    break
+        
+        if not task:
+            detail.add_message(f"[red]Task {task_id} not found[/red]")
+            return
+        
+        if not task.is_blocked:
+            detail.add_message(f"[yellow]Task {task.display_id} is not blocked[/yellow]")
+            return
+        
+        if self.state.unblock_task(task.adw_id):
+            detail.add_message(f"[green]✓ Unblocked {task.display_id}[/green]")
+            detail.add_message("[dim]Task moved to pending queue[/dim]")
+            self._update_ui()
+        else:
+            detail.add_message(f"[red]Failed to unblock {task.display_id}[/red]")
+
+    def _block_task(self, args: str) -> None:
+        """Manually block a task."""
+        detail = self.query_one(DetailPanel)
+        from .state import BlockedReason
+        
+        parts = args.split(maxsplit=1)
+        if len(parts) < 2:
+            detail.add_message("[red]Usage: /block <task-id> <reason>[/red]")
+            return
+        
+        task_id, reason = parts
+        
+        task = self.state.tasks.get(task_id)
+        if not task:
+            for t in self.state.tasks.values():
+                if t.display_id == task_id or (t.adw_id and t.adw_id.startswith(task_id)):
+                    task = t
+                    break
+        
+        if not task:
+            detail.add_message(f"[red]Task {task_id} not found[/red]")
+            return
+        
+        if self.state.block_task(task.adw_id, BlockedReason.MANUAL, reason):
+            detail.add_message(f"[yellow]🛑 Blocked {task.display_id}[/yellow]")
+            detail.add_message(f"[dim]Reason: {reason}[/dim]")
+            self._update_ui()
+        else:
+            detail.add_message(f"[red]Failed to block {task.display_id}[/red]")
+
     def _poll_agents(self) -> None:
         """Poll for agent completion."""
         completed = self.agent_manager.poll()
@@ -688,6 +821,12 @@ class ADWApp(App):
             self._approve_spec(args)
         elif cmd == "reject":
             self._reject_spec(args)
+        elif cmd == "blocked":
+            self._show_blocked_tasks()
+        elif cmd == "unblock":
+            self._unblock_task(args)
+        elif cmd == "block":
+            self._block_task(args)
         elif cmd == "version":
             detail.add_message(f"ADW version {__version__}")
         elif cmd == "quit" or cmd == "exit":

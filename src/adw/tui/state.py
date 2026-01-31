@@ -6,9 +6,21 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 from pathlib import Path
+from enum import Enum
+import re
 
 from ..agent.models import TaskStatus as AgentTaskStatus
 from ..tasks import load_tasks as load_tasks_cli, TaskStatus as CLITaskStatus
+
+
+class BlockedReason(str, Enum):
+    """Reason a task is blocked."""
+    DEPENDENCY = "dependency"
+    APPROVAL = "approval"
+    EXTERNAL = "external"
+    QUESTION = "question"
+    ERROR = "error"
+    MANUAL = "manual"
 
 
 @dataclass
@@ -23,10 +35,32 @@ class TaskState:
     pid: int | None = None
     started_at: datetime | None = None
     last_activity: str | None = None
+    
+    # Blocked fields
+    blocked_reason: BlockedReason | None = None
+    blocked_message: str | None = None
+    blocked_needs: list[str] = field(default_factory=list)
+    blocked_since: datetime | None = None
+    blocked_by: str | None = None
 
     @property
     def is_running(self) -> bool:
         return self.status == AgentTaskStatus.IN_PROGRESS
+
+    @property
+    def is_blocked(self) -> bool:
+        return self.status == AgentTaskStatus.BLOCKED
+
+    @property
+    def blocked_summary(self) -> str:
+        """Short summary of why blocked."""
+        if not self.is_blocked:
+            return ""
+        if self.blocked_message:
+            return self.blocked_message[:50]
+        if self.blocked_reason:
+            return self.blocked_reason.value
+        return "Unknown reason"
 
     @property
     def display_id(self) -> str:
@@ -132,3 +166,66 @@ class AppState:
         self.current_activity = None
         self.activity_started_at = None
         self.notify()
+
+    def block_task(self, adw_id: str, reason: BlockedReason, message: str, needs: list[str] | None = None) -> bool:
+        """Block a task with reason and requirements."""
+        tasks_file = Path("tasks.md")
+        if not tasks_file.exists():
+            return False
+
+        content = tasks_file.read_text()
+        
+        # Pattern to match task line
+        pattern = re.compile(
+            rf'\[([🟢🟡⚪]), ({adw_id})\]\s+(.+?)(?=\n\[|$)',
+            re.DOTALL
+        )
+
+        def replace_task(match):
+            description = match.group(3).split('\n')[0].strip()
+            block = f"[🔴, {adw_id}, blocked:{reason.value}] {description}\n"
+            block += f"  > Blocked: {message}\n"
+            if needs:
+                block += f"  > Needs: {', '.join(needs)}\n"
+            return block
+
+        new_content = pattern.sub(replace_task, content)
+
+        if new_content != content:
+            tasks_file.write_text(new_content)
+            self.load_from_tasks_md()
+            return True
+
+        return False
+
+    def unblock_task(self, adw_id: str, new_status: AgentTaskStatus = AgentTaskStatus.PENDING) -> bool:
+        """Unblock a task."""
+        tasks_file = Path("tasks.md")
+        if not tasks_file.exists():
+            return False
+
+        content = tasks_file.read_text()
+
+        emoji = {
+            AgentTaskStatus.PENDING: '🟡',
+            AgentTaskStatus.IN_PROGRESS: '🟢',
+        }.get(new_status, '🟡')
+
+        # Match task with blocked info
+        pattern = re.compile(
+            rf'\[🔴, ({adw_id})(?:, blocked:\w+)?\]\s+(.+?)(?:\n\s*>.*)*(?=\n\[|\n\n|$)',
+            re.DOTALL
+        )
+
+        def replace_task(match):
+            description = match.group(2).split('\n')[0].strip()
+            return f"[{emoji}, {adw_id}] {description}"
+
+        new_content = pattern.sub(replace_task, content)
+
+        if new_content != content:
+            tasks_file.write_text(new_content)
+            self.load_from_tasks_md()
+            return True
+
+        return False
