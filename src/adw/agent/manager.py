@@ -77,14 +77,23 @@ class AgentManager:
         env = os.environ.copy()
         env["ADW_ID"] = adw_id
 
-        # Use DEVNULL for stdout to avoid pipe buffer deadlock
-        # Workflows write their own output files, we don't need stdout
+        # Debug logging
+        with open("/tmp/adw_spawn.log", "a") as f:
+            f.write(f"\n[{adw_id}] Spawning command: {cmd}\n")
+            f.write(f"[{adw_id}] Env vars keys: {list(env.keys())}\n")
+
+        # Capture output to files for debugging
+        stdout_path = f"/tmp/adw_{adw_id}.stdout"
+        stderr_path = f"/tmp/adw_{adw_id}.stderr"
+        stdout_f = open(stdout_path, "w")
+        stderr_f = open(stderr_path, "w")
+
         process = subprocess.Popen(
             cmd,
             env=env,
-            start_new_session=True,  # Survives parent death
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            start_new_session=True,
+            stdout=stdout_f,
+            stderr=stderr_f,
         )
 
         agent = AgentProcess(
@@ -95,6 +104,9 @@ class AgentManager:
             worktree=worktree,
             model=model,
         )
+        # Store file handles to close later
+        agent._stdout_file = stdout_f
+        agent._stderr_file = stderr_f
 
         self._agents[adw_id] = agent
         self.notify("spawned", adw_id, pid=process.pid, task=task_description)
@@ -163,22 +175,26 @@ class AgentManager:
         except ProcessLookupError:
             return False
 
-    def poll(self) -> list[tuple[str, int]]:
+    def poll(self) -> list[tuple[str, int, str]]:
         """Poll agents for completion.
 
         Returns:
-            List of (adw_id, return_code) for completed agents.
+            List of (adw_id, return_code, stderr) for completed agents.
         """
         completed = []
 
         for adw_id, agent in list(self._agents.items()):
             code = agent.process.poll()
             if code is not None:
-                # Capture stderr before removing
+                # Read stderr from file
                 stderr_msg = ""
-                if agent.process.stderr:
+                if hasattr(agent, "_stderr_file") and agent._stderr_file:
                     try:
-                        stderr_msg = agent.process.stderr.read().decode()[:500]
+                        # Flush and close first
+                        agent._stderr_file.close()
+                        # Read content
+                        with open(agent._stderr_file.name, "r") as f:
+                            stderr_msg = f.read()[:1000]
                     except Exception:
                         pass
 
@@ -189,7 +205,7 @@ class AgentManager:
                     except Exception:
                         pass
 
-                completed.append((adw_id, code))
+                completed.append((adw_id, code, stderr_msg))
                 del self._agents[adw_id]
 
                 event = "completed" if code == 0 else "failed"

@@ -127,15 +127,15 @@ class CronDaemon:
             self.notify("task_failed", adw_id=adw_id, error=str(e))
             return None
 
-    def _check_completions(self) -> list[tuple[str, int]]:
+    def _check_completions(self) -> list[tuple[str, int, str]]:
         """Check for completed agents and update tasks.
 
         Returns:
-            List of (adw_id, return_code) for completed agents.
+            List of (adw_id, return_code, stderr) for completed agents.
         """
         completed = self.manager.poll()
 
-        for adw_id, return_code in completed:
+        for adw_id, return_code, stderr in completed:
             # Find task by adw_id
             task_desc = None
             for desc, aid in list(self._task_agents.items()):
@@ -153,17 +153,21 @@ class CronDaemon:
                         description=task_desc,
                     )
                 else:
+                    error_msg = f"Exit code {return_code}"
+                    if stderr:
+                        error_msg += f": {stderr[:100]}"
                     mark_failed(
                         self.config.tasks_file,
                         task_desc,
                         adw_id,
-                        f"Exit code {return_code}",
+                        error_msg,
                     )
                     self.notify(
                         "task_failed",
                         adw_id=adw_id,
                         description=task_desc,
                         return_code=return_code,
+                        stderr=stderr,
                     )
 
         return completed
@@ -261,7 +265,10 @@ async def run_daemon(
         elif event == "task_completed":
             print(f"[cron] ✅ Completed: {data['description']}")
         elif event == "task_failed":
+            stderr = data.get('stderr', '')[:200] if data.get('stderr') else ''
             print(f"[cron] ❌ Failed: {data['description']} - {data.get('error') or data.get('return_code')}")
+            if stderr:
+                print(f"[cron]    stderr: {stderr}")
         elif event == "error":
             print(f"[cron] ⚠️ Error: {data['error']}")
 
