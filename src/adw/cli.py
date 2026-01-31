@@ -12,12 +12,16 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+import asyncio
+
 from . import __version__
 from .dashboard import run_dashboard
 from .detect import detect_project, get_project_summary, is_monorepo
 from .init import init_project, print_init_summary
 from .specs import get_pending_specs, load_all_specs
 from .tasks import TaskStatus, get_tasks_summary, load_tasks
+from .triggers.cron import run_daemon
+from .tui import run_tui
 from .update import check_for_update, run_update
 
 console = Console()
@@ -38,8 +42,14 @@ def main(ctx: click.Context, version: bool) -> None:
         return
 
     if ctx.invoked_subcommand is None:
-        # Default: run dashboard
-        run_dashboard()
+        # Default: run TUI dashboard
+        run_tui()
+
+
+@main.command()
+def dashboard() -> None:
+    """Open the interactive TUI dashboard."""
+    run_tui()
 
 
 @main.command()
@@ -352,6 +362,362 @@ def version_cmd() -> None:
     # Also show Python version
     v = sys.version_info
     console.print(f"Python {v.major}.{v.minor}.{v.micro}")
+
+
+@main.group()
+def worktree() -> None:
+    """Manage git worktrees for parallel task execution.
+
+    Worktrees allow multiple branches to be checked out simultaneously,
+    enabling agents to work in isolated environments.
+    """
+    pass
+
+
+@worktree.command("list")
+def worktree_list() -> None:
+    """List all git worktrees."""
+    from .agent.worktree import list_worktrees
+
+    worktrees = list_worktrees()
+
+    if not worktrees:
+        console.print("[yellow]No worktrees found.[/yellow]")
+        console.print("[dim]Run 'adw worktree create <name>' to create one.[/dim]")
+        return
+
+    console.print("[bold cyan]Git Worktrees:[/bold cyan]")
+    console.print()
+
+    for wt in worktrees:
+        path = wt.get("path", "")
+        branch = wt.get("branch", "detached HEAD")
+        commit = wt.get("commit", "unknown")[:8]
+
+        # Mark main worktree
+        is_main = Path(path) == Path.cwd()
+        marker = "[bold yellow](main)[/bold yellow]" if is_main else ""
+
+        console.print(f"[bold]{path}[/bold] {marker}")
+        console.print(f"  Branch: {branch}")
+        console.print(f"  Commit: {commit}")
+        console.print()
+
+
+@worktree.command("create")
+@click.argument("name")
+@click.option("--branch", "-b", help="Branch name (default: adw-<name>)")
+def worktree_create(name: str, branch: str | None) -> None:
+    """Create a new git worktree.
+
+    Creates a worktree in the trees/ directory with an isolated
+    branch for parallel task execution.
+
+    \b
+    Examples:
+        adw worktree create phase-01
+        adw worktree create bugfix --branch fix-login
+    """
+    from .agent.worktree import create_worktree
+
+    console.print(f"[dim]Creating worktree: {name}[/dim]")
+
+    worktree_path = create_worktree(name, branch_name=branch)
+
+    if worktree_path:
+        console.print()
+        console.print(f"[green]✓[/green] Worktree created at: {worktree_path}")
+        console.print()
+        console.print(f"[dim]To work in this worktree:[/dim]")
+        console.print(f"[dim]  cd {worktree_path}[/dim]")
+    else:
+        console.print("[red]Failed to create worktree[/red]")
+
+
+@worktree.command("remove")
+@click.argument("name")
+@click.option("--force", "-f", is_flag=True, help="Force removal even if there are changes")
+def worktree_remove(name: str, force: bool) -> None:
+    """Remove a git worktree.
+
+    Removes the specified worktree and cleans up git references.
+
+    \b
+    Examples:
+        adw worktree remove phase-01
+        adw worktree remove bugfix --force
+    """
+    from .agent.worktree import remove_worktree
+
+    console.print(f"[dim]Removing worktree: {name}[/dim]")
+
+    success = remove_worktree(name, force=force)
+
+    if not success:
+        console.print()
+        console.print("[yellow]Tip: Use --force to remove worktree with uncommitted changes[/yellow]")
+
+
+@main.group()
+def github() -> None:
+    """GitHub integration commands.
+
+    Trigger workflows from GitHub issues, watch repositories,
+    and create pull requests automatically.
+    """
+    pass
+
+
+@github.command("watch")
+@click.option(
+    "--label",
+    "-l",
+    default="adw",
+    help="GitHub issue label to watch (default: adw)",
+)
+@click.option(
+    "--interval",
+    "-i",
+    type=int,
+    default=300,
+    help="Seconds between checks (default: 300)",
+)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+def github_watch(label: str, interval: int, dry_run: bool) -> None:
+    """Watch GitHub issues and trigger workflows.
+
+    Continuously polls GitHub for open issues with the specified label
+    and spawns agents to work on them using the standard workflow.
+
+    \b
+    Examples:
+        adw github watch                    # Watch for 'adw' label
+        adw github watch -l feature         # Watch for 'feature' label
+        adw github watch -i 60              # Check every 60 seconds
+        adw github watch --dry-run          # See what would run
+
+    Press Ctrl+C to stop watching.
+    """
+    from .triggers.github import run_github_cron
+
+    console.print("[bold cyan]Starting GitHub issue watcher[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Label: {label}[/dim]")
+    console.print(f"[dim]Check interval: {interval}s[/dim]")
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+    console.print()
+    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
+    console.print()
+
+    try:
+        run_github_cron(label=label, interval=interval, dry_run=dry_run)
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Watcher stopped by user[/yellow]")
+
+
+@github.command("process")
+@click.argument("issue_number", type=int)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+def github_process(issue_number: int, dry_run: bool) -> None:
+    """Process a specific GitHub issue.
+
+    Fetches the issue details and spawns an agent to work on it
+    using the standard workflow (plan, implement, update).
+
+    \b
+    Examples:
+        adw github process 123              # Process issue #123
+        adw github process 456 --dry-run    # See details without running
+    """
+    from .agent.executor import generate_adw_id
+    from .integrations.github import get_issue, add_issue_comment
+    from .workflows.standard import run_standard_workflow
+
+    console.print(f"[bold cyan]Processing GitHub issue #{issue_number}[/bold cyan]")
+    console.print()
+
+    # Fetch issue
+    console.print("[dim]Fetching issue details...[/dim]")
+    issue = get_issue(issue_number)
+
+    if not issue:
+        console.print(f"[red]Error: Issue #{issue_number} not found[/red]")
+        console.print("[dim]Make sure you're in a GitHub repository with 'gh' CLI configured[/dim]")
+        return
+
+    console.print(f"[bold]Title:[/bold] {issue.title}")
+    console.print(f"[bold]State:[/bold] {issue.state}")
+    console.print(f"[bold]Labels:[/bold] {', '.join(issue.labels) if issue.labels else 'none'}")
+    console.print()
+
+    if issue.state != "OPEN":
+        console.print(f"[yellow]Warning: Issue is {issue.state.lower()}[/yellow]")
+        if not click.confirm("Continue anyway?"):
+            return
+
+    adw_id = generate_adw_id()
+
+    if dry_run:
+        console.print(f"[yellow]DRY RUN: Would process with ADW ID {adw_id}[/yellow]")
+        console.print(f"[dim]Worktree: issue-{issue_number}-{adw_id}[/dim]")
+        return
+
+    console.print(f"[dim]ADW ID: {adw_id}[/dim]")
+    console.print()
+
+    # Add comment to issue
+    add_issue_comment(
+        issue_number,
+        f"🤖 ADW is working on this issue.\n\n**ADW ID**: `{adw_id}`",
+        adw_id,
+    )
+
+    # Run workflow
+    worktree_name = f"issue-{issue_number}-{adw_id}"
+    console.print(f"[dim]Running standard workflow in worktree: {worktree_name}[/dim]")
+    console.print()
+
+    success = run_standard_workflow(
+        task_description=f"{issue.title}\n\n{issue.body}",
+        worktree_name=worktree_name,
+        adw_id=adw_id,
+    )
+
+    # Update issue with result
+    if success:
+        console.print()
+        console.print("[green]✓ Workflow completed successfully[/green]")
+        add_issue_comment(
+            issue_number,
+            f"✅ Implementation complete!\n\nADW ID: `{adw_id}`\n\nPlease review the PR.",
+            adw_id,
+        )
+    else:
+        console.print()
+        console.print("[red]✗ Workflow failed[/red]")
+        console.print(f"[dim]Check logs in agents/{adw_id}/[/dim]")
+        add_issue_comment(
+            issue_number,
+            f"❌ Implementation failed.\n\nADW ID: `{adw_id}`\n\nCheck logs in `agents/{adw_id}/`",
+            adw_id,
+        )
+
+
+@main.command()
+@click.option(
+    "--poll-interval",
+    "-p",
+    type=float,
+    default=5.0,
+    help="Seconds between task checks (default: 5.0)",
+)
+@click.option(
+    "--max-concurrent",
+    "-m",
+    type=int,
+    default=3,
+    help="Maximum simultaneous agents (default: 3)",
+)
+@click.option(
+    "--tasks-file",
+    "-f",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Path to tasks.md (default: ./tasks.md)",
+)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show eligible tasks without executing them",
+)
+def run(
+    poll_interval: float,
+    max_concurrent: int,
+    tasks_file: Path | None,
+    dry_run: bool,
+) -> None:
+    """Start autonomous task execution daemon.
+
+    Monitors tasks.md for eligible tasks and spawns agents
+    to execute them automatically. Tasks are picked up based on:
+
+    - Status (pending tasks only)
+    - Dependencies (blocked tasks wait for dependencies)
+    - Concurrency limits (max-concurrent setting)
+
+    \b
+    Examples:
+        adw run                    # Start with defaults
+        adw run -m 5              # Allow 5 concurrent agents
+        adw run -p 10             # Poll every 10 seconds
+        adw run --dry-run         # See what would run
+
+    Press Ctrl+C to stop the daemon gracefully.
+    """
+    tasks_path = tasks_file or Path.cwd() / "tasks.md"
+
+    if dry_run:
+        # Import here to avoid loading heavy deps for simple commands
+        from .agent.task_parser import get_eligible_tasks
+
+        console.print("[bold cyan]Dry run - eligible tasks:[/bold cyan]")
+        console.print()
+
+        eligible = get_eligible_tasks(tasks_path)
+
+        if not eligible:
+            console.print("[yellow]No eligible tasks found.[/yellow]")
+            console.print("[dim]Tasks must be pending and not blocked by dependencies.[/dim]")
+            return
+
+        console.print(f"[bold]Found {len(eligible)} eligible task(s):[/bold]")
+        for i, task in enumerate(eligible[:max_concurrent], 1):
+            model = task.model or "sonnet"
+            console.print(f"  {i}. {task.description}")
+            console.print(f"     [dim]Model: {model}[/dim]")
+            if task.worktree_name:
+                console.print(f"     [dim]Worktree: {task.worktree_name}[/dim]")
+
+        if len(eligible) > max_concurrent:
+            console.print()
+            console.print(f"[dim]... and {len(eligible) - max_concurrent} more (would queue)[/dim]")
+
+        return
+
+    # Run the daemon
+    console.print("[bold cyan]Starting ADW autonomous execution daemon[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Tasks file: {tasks_path}[/dim]")
+    console.print(f"[dim]Poll interval: {poll_interval}s[/dim]")
+    console.print(f"[dim]Max concurrent: {max_concurrent}[/dim]")
+    console.print()
+    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
+    console.print()
+
+    try:
+        asyncio.run(
+            run_daemon(
+                tasks_file=tasks_path,
+                poll_interval=poll_interval,
+                max_concurrent=max_concurrent,
+            )
+        )
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Daemon stopped by user[/yellow]")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,7 @@ class ADWApp(App):
         self.state = AppState()
         self.agent_manager = AgentManager()
         self.log_watcher = LogWatcher()
+        self._new_task_mode = False  # Flag for new task input mode
 
         self.state.subscribe(self._on_state_change)
         self.agent_manager.subscribe(self._on_agent_event)
@@ -138,28 +139,67 @@ class ADWApp(App):
 
     async def action_new_task(self) -> None:
         """Create and start new task."""
-        # Simple implementation - just prompt for description
-        # Full modal comes in later phase
-        self.notify("Enter task in status bar input")
+        # Focus on status bar input for task description
+        status_bar = self.query_one("#status-bar", StatusBar)
+        input_field = self.query_one("#status-input-field", Input)
 
-    def spawn_task(self, description: str) -> None:
+        # Set placeholder to guide user
+        input_field.placeholder = "Enter task description (then press Enter to spawn agent)..."
+        input_field.focus()
+
+        # Set a flag to indicate we're in new task mode
+        self._new_task_mode = True
+        self.notify("Enter task description in input bar")
+
+    def spawn_task(self, description: str, workflow: str = "standard", model: str = "sonnet") -> None:
         """Spawn a new task agent."""
         adw_id = generate_adw_id()
         worktree = f"task-{adw_id}"
-
-        # Mark in progress in tasks.md
         tasks_file = Path("tasks.md")
-        mark_in_progress(tasks_file, description, adw_id)
+
+        # Try to mark existing task in progress
+        success = mark_in_progress(tasks_file, description, adw_id)
+
+        # If task doesn't exist in tasks.md, add it first
+        if not success:
+            # Read current content
+            content = tasks_file.read_text() if tasks_file.exists() else "# ADW Build Task Board\n\n---\n\n## Worktree: main\n\n"
+
+            # Find the main worktree section and add the task
+            lines = content.split("\n")
+            insert_idx = None
+
+            # Find the main worktree section
+            for i, line in enumerate(lines):
+                if "## Worktree: main" in line:
+                    # Find next empty line after this section header
+                    for j in range(i + 1, len(lines)):
+                        if lines[j].strip() == "" or lines[j].startswith("---"):
+                            insert_idx = j
+                            break
+                    break
+
+            # If we found where to insert, add the task
+            if insert_idx is not None:
+                lines.insert(insert_idx, f"[🟡, {adw_id}] {description}")
+                tasks_file.write_text("\n".join(lines))
+            else:
+                # Fallback: append to end of main section
+                content = content.rstrip() + f"\n[🟡, {adw_id}] {description}\n"
+                tasks_file.write_text(content)
 
         # Spawn agent
         self.agent_manager.spawn_workflow(
             task_description=description,
             worktree_name=worktree,
+            workflow=workflow,
+            model=model,
             adw_id=adw_id,
         )
 
         # Refresh state
         self.state.load_from_tasks_md()
+        self.notify(f"Task {adw_id[:8]} spawned with {workflow} workflow")
 
     def action_show_help(self) -> None:
         """Show help."""
@@ -167,7 +207,12 @@ class ADWApp(App):
 
     def action_cancel(self) -> None:
         """Cancel current action."""
-        pass
+        if self._new_task_mode:
+            self._new_task_mode = False
+            input_field = self.query_one("#status-input-field", Input)
+            input_field.placeholder = "Type message or command..."
+            input_field.value = ""
+            self.notify("New task cancelled")
 
     def action_clear_logs(self) -> None:
         """Clear log viewer."""
@@ -189,6 +234,15 @@ class ADWApp(App):
 
         # Clear the input
         event.input.value = ""
+
+        # Check if we're in new task mode
+        if self._new_task_mode:
+            # Spawn new task
+            self.spawn_task(message)
+            self._new_task_mode = False
+            # Reset placeholder
+            event.input.placeholder = "Type message or command..."
+            return
 
         # Determine priority based on message content
         priority = MessagePriority.NORMAL

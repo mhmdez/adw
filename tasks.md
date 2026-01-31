@@ -132,7 +132,7 @@
 [✅, 51565d9c] Create src/adw/integrations/github.py API wrapper
 [✅, 803243c6] Create src/adw/triggers/github.py polling trigger
 [✅, d7050b3a] Create src/adw/triggers/webhook.py FastAPI handler
-[⏰] Add CLI commands: adw github watch/process
+[✅, f5b33663] Add CLI commands: adw github watch/process
 [⏰] Verify Phase 11: Can trigger workflow from GitHub issue
 
 ---
@@ -143,7 +143,7 @@
 [✅, 892118f6] Create .claude/commands/experts/cc_expert_improve.md
 [✅, 77d99349] Create .claude/commands/load_ai_docs.md
 [✅, fc684509] Create .claude/commands/create_agent.md
-[⏰] Create ai_docs/README.md with documentation sources
+[✅, 23466c97] Create ai_docs/README.md with documentation sources
 [⏰] Verify Phase 12: Expert system can be queried and improved
 
 ---
@@ -154,7 +154,7 @@
 [✅, 793a7295] Test complete workflow: adw new "test feature" through PR
 [✅, 50e5ff7f] Update README.md with new features
 [✅, bac4d5de] Update CLAUDE.md with ADW orchestration docs
-[⏰] Tag release v0.2.0
+[🟡, a2ecdc7d] Tag release v0.2.0
 
 ---
 
