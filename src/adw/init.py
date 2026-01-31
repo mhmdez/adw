@@ -16,6 +16,92 @@ if TYPE_CHECKING:
 console = Console()
 
 
+# Files/folders to ignore when checking if project is empty
+IGNORE_FILES = {
+    '.git', '.gitignore', '.gitattributes',
+    'README.md', 'LICENSE', 'CHANGELOG.md',
+    '.adw', '.claude', '.vscode', '.idea',
+    'node_modules', '__pycache__', '.venv', 'venv',
+    '.DS_Store', 'Thumbs.db',
+}
+
+
+def is_empty_project(path: Path) -> bool:
+    """Check if project is empty or near-empty.
+    
+    Args:
+        path: Project root path
+        
+    Returns:
+        True if project has no meaningful source files yet
+    """
+    try:
+        files = list(path.iterdir())
+    except PermissionError:
+        return True
+    
+    meaningful = [f for f in files if f.name not in IGNORE_FILES]
+    return len(meaningful) < 2
+
+
+EMPTY_PROJECT_TEMPLATE = '''# CLAUDE.md
+
+## Project Overview
+
+*This project is just getting started. Context will build as you work.*
+
+**Project Name:** {project_name}
+
+## What We've Built So Far
+
+*Complete tasks to see progress documented here.*
+
+<!-- ADW:PROGRESS_LOG -->
+
+## Tech Stack
+
+*Will be detected as you add dependencies.*
+
+## Development Commands
+
+*Add your commands here as you set things up.*
+
+```bash
+# Example commands to add:
+# npm run dev
+# python manage.py runserver
+```
+
+## Architecture
+
+*Will be documented as the project takes shape.*
+
+## Notes
+
+*Capture important decisions and context here.*
+
+---
+
+## Multi-Agent Orchestration
+
+This project uses ADW (AI Developer Workflow) for task orchestration.
+
+### Key Commands (in Claude Code)
+
+| Command | Purpose |
+|---------|---------|
+| `/discuss` | Interactive planning for complex features |
+| `/approve_spec` | Approve spec, create tasks |
+| `/build` | Direct implementation for simple tasks |
+
+### Relevant Files
+
+- `tasks.md` - Task tracking
+- `specs/` - Feature specifications
+- `.claude/commands/` - Slash commands
+'''
+
+
 def get_template_path(template_name: str) -> str:
     """Get the content of a template file.
 
@@ -267,6 +353,12 @@ def init_project(
         "updated": [],
     }
 
+    # Check for empty project BEFORE creating any files
+    empty_project = is_empty_project(project_path)
+    
+    if empty_project:
+        console.print("[cyan]Empty project detected — will use progressive learning template[/cyan]")
+    
     # Detect project type
     console.print("[dim]Detecting project type...[/dim]")
     detections = detect_project(project_path)
@@ -274,7 +366,7 @@ def init_project(
     if detections:
         summary = get_project_summary(detections)
         console.print(f"[green]Detected: {summary}[/green]")
-    else:
+    elif not empty_project:
         console.print("[yellow]Could not detect project type. Using generic templates.[/yellow]")
 
     # Check for monorepo
@@ -322,6 +414,7 @@ def init_project(
 
     # Handle CLAUDE.md
     claude_md_path = project_path / "CLAUDE.md"
+    
     if claude_md_path.exists() and not force:
         # Append orchestration section if not present
         existing = claude_md_path.read_text()
@@ -333,7 +426,12 @@ def init_project(
             result["skipped"].append("CLAUDE.md")
     else:
         # Generate new CLAUDE.md
-        content = generate_claude_md(detections, project_path)
+        if empty_project:
+            # Use progressive learning template for empty projects
+            content = EMPTY_PROJECT_TEMPLATE.format(project_name=project_path.name)
+        else:
+            content = generate_claude_md(detections, project_path)
+        
         if create_file(claude_md_path, content, force):
             result["created"].append("CLAUDE.md")
         else:

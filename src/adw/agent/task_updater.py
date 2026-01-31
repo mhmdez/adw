@@ -180,6 +180,7 @@ def mark_done(
     commit: str | None = None,
     duration: str | None = None,
     archive: bool = True,
+    update_context: bool = True,
 ) -> bool:
     """Mark task as done and optionally archive to history."""
     result = update_task_status(
@@ -190,6 +191,14 @@ def mark_done(
         archive_to_history(path, description, "completed", adw_id, duration=duration)
         # Optionally remove from tasks.md to keep it clean
         # remove_from_tasks(path, description)
+    
+    if result and update_context:
+        # Update CLAUDE.md progress log
+        try:
+            from ..context import update_progress_log
+            update_progress_log(path.parent, description, success=True)
+        except Exception:
+            pass  # Don't fail task completion on context update failure
     
     return result
 

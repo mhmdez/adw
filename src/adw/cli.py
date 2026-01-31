@@ -150,6 +150,79 @@ def init(force: bool, smart: bool, quick: bool, path: Path | None) -> None:
 
 
 @main.command()
+@click.option("--full", "-f", is_flag=True, help="Full Claude Code analysis")
+@click.argument("path", required=False, type=click.Path(exists=True, path_type=Path))
+def refresh(full: bool, path: Path | None) -> None:
+    """Refresh project context.
+
+    Re-analyzes the project and updates CLAUDE.md with current state.
+    Useful after major changes or when context feels stale.
+
+    \\b
+    Examples:
+        adw refresh           # Quick detection refresh
+        adw refresh --full    # Deep Claude Code analysis
+    """
+    from .analyze import (
+        analyze_project,
+        generate_claude_md_from_analysis,
+        generate_architecture_md,
+    )
+    from .detect import detect_project, get_project_summary
+    
+    project_path = path or Path.cwd()
+    claude_md_path = project_path / "CLAUDE.md"
+    
+    console.print(f"[bold cyan]Refreshing context for {project_path.name}[/bold cyan]")
+    console.print()
+    
+    if full:
+        # Deep analysis with Claude Code
+        console.print("[dim]🔍 Running deep analysis with Claude Code...[/dim]")
+        
+        with console.status("[cyan]Analyzing...[/cyan]"):
+            analysis = analyze_project(project_path, verbose=True)
+        
+        if analysis:
+            console.print(f"[green]✓ Analysis complete[/green]")
+            console.print(f"[dim]  Stack: {', '.join(analysis.stack)}[/dim]")
+            
+            # Generate and write updated docs
+            claude_md = generate_claude_md_from_analysis(
+                analysis.__dict__, project_path
+            )
+            claude_md_path.write_text(claude_md)
+            console.print("[green]✓ Updated CLAUDE.md[/green]")
+            
+            # Also update ARCHITECTURE.md
+            arch_md = generate_architecture_md(analysis.__dict__, project_path)
+            (project_path / "ARCHITECTURE.md").write_text(arch_md)
+            console.print("[green]✓ Updated ARCHITECTURE.md[/green]")
+        else:
+            console.print("[red]✗ Analysis failed[/red]")
+    else:
+        # Quick detection refresh
+        console.print("[dim]🔍 Quick detection...[/dim]")
+        
+        detections = detect_project(project_path)
+        
+        if detections:
+            summary = get_project_summary(detections)
+            console.print(f"[green]✓ Detected: {summary}[/green]")
+            
+            # Update CLAUDE.md with new detection
+            from .init import generate_claude_md
+            content = generate_claude_md(detections, project_path)
+            claude_md_path.write_text(content)
+            console.print("[green]✓ Updated CLAUDE.md[/green]")
+        else:
+            console.print("[yellow]No stack detected — try 'adw refresh --full' for deep analysis[/yellow]")
+    
+    console.print()
+    console.print("[dim]Tip: Run 'adw refresh --full' for comprehensive analysis[/dim]")
+
+
+@main.command()
 @click.argument("description", nargs=-1)
 def new(description: tuple[str, ...]) -> None:
     """Start a new task discussion.
