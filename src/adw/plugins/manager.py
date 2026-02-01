@@ -36,7 +36,7 @@ class PluginManager:
     """
     
     PLUGINS_DIR = Path.home() / ".adw" / "plugins"
-    BUILTIN_PLUGINS = ["qmd", "github", "linear"]  # Plugins that come with ADW
+    BUILTIN_PLUGINS = ["qmd", "github"]  # Plugins that come with ADW
     
     def __init__(self):
         self._plugins: dict[str, Plugin] = {}
