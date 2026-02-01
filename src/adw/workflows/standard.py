@@ -16,6 +16,7 @@ from ..agent.task_updater import mark_done, mark_failed
 from ..agent.worktree import create_worktree, get_worktree_path
 from ..agent.ports import find_available_ports, write_ports_env
 from ..agent.environment import write_env_file
+from ..plugins import get_plugin_manager
 
 
 def run_standard_workflow(
@@ -62,8 +63,17 @@ def run_standard_workflow(
         # Plan phase
         state.save("plan")
 
+        # Build plan prompt and let plugins inject context
+        plan_prompt = f"/plan {adw_id} {task_description}"
+        
+        try:
+            manager = get_plugin_manager()
+            plan_prompt = manager.dispatch_plan(task_description, plan_prompt)
+        except Exception:
+            pass  # Don't fail if plugins have issues
+
         plan_response = prompt_with_retry(AgentPromptRequest(
-            prompt=f"/plan {adw_id} {task_description}",
+            prompt=plan_prompt,
             adw_id=adw_id,
             agent_name=f"planner-{adw_id}",
             model=model,

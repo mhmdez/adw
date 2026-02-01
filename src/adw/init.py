@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 
 from .detect import Detection, detect_project, get_project_summary, is_monorepo
+from .integrations import qmd as qmd_integration
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -334,12 +335,14 @@ def select_agent_templates(detections: list[Detection]) -> list[str]:
 def init_project(
     project_path: Path | None = None,
     force: bool = False,
+    qmd: bool | None = None,
 ) -> dict[str, list[str]]:
     """Initialize ADW in a project.
 
     Args:
         project_path: Path to project root. Defaults to current directory.
         force: Overwrite existing files.
+        qmd: Enable qmd integration. None = auto-detect, True = enable, False = skip.
 
     Returns:
         Dictionary with created/skipped file lists.
@@ -445,6 +448,25 @@ def init_project(
         result["updated"].append(".gitignore")
     elif gitignore_result == "skipped":
         result["skipped"].append(".gitignore (already has ADW entries)")
+
+    # Dispatch to plugins for initialization
+    try:
+        from .plugins import get_plugin_manager
+        manager = get_plugin_manager()
+        
+        # Let plugins do their init (e.g., qmd will set up collections)
+        console.print("[dim]Running plugin initialization...[/dim]")
+        manager.dispatch_init(project_path)
+        
+        # Check if qmd plugin did anything
+        qmd_plugin = manager.get("qmd")
+        if qmd_plugin and qmd_plugin.enabled:
+            status = qmd_plugin.status()
+            if status.get("available") and status.get("collections"):
+                result["created"].append("qmd semantic search")
+    except Exception as e:
+        # Don't fail init if plugins have issues
+        console.print(f"[dim]Plugin init warning: {e}[/dim]")
 
     return result
 

@@ -78,8 +78,9 @@ def dashboard() -> None:
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing files")
 @click.option("--smart", "-s", is_flag=True, help="Use Claude Code to analyze project (slower but better)")
 @click.option("--quick", "-q", is_flag=True, help="Skip analysis, use templates only")
+@click.option("--qmd/--no-qmd", default=None, help="Enable/disable qmd semantic search (default: auto-detect)")
 @click.argument("path", required=False, type=click.Path(exists=True, path_type=Path))
-def init(force: bool, smart: bool, quick: bool, path: Path | None) -> None:
+def init(force: bool, smart: bool, quick: bool, qmd: bool | None, path: Path | None) -> None:
     """Initialize ADW in the current project.
 
     Creates .claude/ directory with commands and agents,
@@ -145,7 +146,7 @@ def init(force: bool, smart: bool, quick: bool, path: Path | None) -> None:
             console.print("[yellow]⚠ Analysis failed, falling back to detection[/yellow]")
             console.print()
 
-    result = init_project(project_path, force=force)
+    result = init_project(project_path, force=force, qmd=qmd)
     print_init_summary(result)
 
 
@@ -1363,6 +1364,145 @@ def notify(sound: str, message: str) -> None:
     else:
         console.print("[red]✗ Failed to send notification[/red]")
         console.print("[dim]Check System Preferences > Notifications[/dim]")
+
+
+# =============================================================================
+# Plugin System
+# =============================================================================
+
+
+@main.group()
+def plugin() -> None:
+    """Manage ADW plugins.
+
+    Plugins extend ADW with additional features like semantic search,
+    GitHub integration, notifications, and more.
+
+    \\b
+    Examples:
+        adw plugin list                  # Show installed plugins
+        adw plugin install qmd           # Install a plugin
+        adw plugin remove qmd            # Uninstall
+    """
+    pass
+
+
+@plugin.command("list")
+def plugin_list() -> None:
+    """List installed plugins."""
+    from .plugins import get_plugin_manager
+    
+    manager = get_plugin_manager()
+    plugins = manager.all
+    
+    if not plugins:
+        console.print("[yellow]No plugins installed[/yellow]")
+        console.print()
+        console.print("[dim]Available plugins:[/dim]")
+        console.print("  • qmd - Semantic search and context injection")
+        console.print()
+        console.print("[dim]Install with: adw plugin install <name>[/dim]")
+        return
+    
+    console.print("[bold cyan]Installed Plugins:[/bold cyan]")
+    console.print()
+    
+    for p in plugins:
+        status_icon = "[green]✓[/green]" if p.enabled else "[yellow]○[/yellow]"
+        console.print(f"{status_icon} [bold]{p.name}[/bold] v{p.version}")
+        if p.description:
+            console.print(f"   [dim]{p.description}[/dim]")
+
+
+@plugin.command("install")
+@click.argument("name")
+def plugin_install(name: str) -> None:
+    """Install a plugin.
+
+    \\b
+    Examples:
+        adw plugin install qmd           # Built-in plugin
+        adw plugin install ./my-plugin   # From local path
+        adw plugin install gh:user/repo  # From GitHub
+    """
+    from .plugins import get_plugin_manager
+    
+    manager = get_plugin_manager()
+    
+    console.print(f"[dim]Installing {name}...[/dim]")
+    
+    success, message = manager.install(name)
+    
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+
+
+@plugin.command("remove")
+@click.argument("name")
+def plugin_remove(name: str) -> None:
+    """Remove a plugin."""
+    from .plugins import get_plugin_manager
+    
+    manager = get_plugin_manager()
+    
+    success, message = manager.uninstall(name)
+    
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+
+
+@plugin.command("status")
+@click.argument("name", required=False)
+def plugin_status(name: str | None) -> None:
+    """Show plugin status."""
+    from .plugins import get_plugin_manager
+    
+    manager = get_plugin_manager()
+    
+    if name:
+        p = manager.get(name)
+        if not p:
+            console.print(f"[red]Plugin '{name}' not found[/red]")
+            return
+        
+        status = p.status()
+        console.print(f"[bold]{status['name']}[/bold] v{status['version']}")
+        console.print()
+        for key, value in status.items():
+            if key not in ("name", "version"):
+                console.print(f"  {key}: {value}")
+    else:
+        plugins = manager.all
+        for p in plugins:
+            status = p.status()
+            enabled = "[green]enabled[/green]" if status.get("enabled") else "[yellow]disabled[/yellow]"
+            console.print(f"[bold]{p.name}[/bold]: {enabled}")
+
+
+# =============================================================================
+# QMD Commands (via plugin, kept for backward compatibility)
+# =============================================================================
+
+def _register_plugin_commands():
+    """Register commands from enabled plugins."""
+    try:
+        from .plugins import get_plugin_manager
+        manager = get_plugin_manager()
+        
+        for plugin in manager.enabled:
+            for cmd in plugin.get_commands():
+                main.add_command(cmd)
+    except Exception:
+        # Don't crash if plugin loading fails
+        pass
+
+
+# Register plugin commands at import time
+_register_plugin_commands()
 
 
 if __name__ == "__main__":
