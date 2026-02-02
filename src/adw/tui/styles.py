@@ -38,9 +38,34 @@ Screen {
 }
 
 /* Main Layout */
+#main-layout {
+    height: 1fr;
+    width: 100%;
+}
+
 #main-container {
     height: 1fr;
+    width: 1fr;
     padding: 1 2;
+}
+
+/* Event Stream Panel */
+#event-stream {
+    width: 40;
+    height: 1fr;
+    background: #0a0a0a;
+    border: round #333;
+    border-left: solid #222;
+    padding: 1;
+    margin: 1;
+}
+
+#event-stream:focus {
+    border: round #00D4FF;
+}
+
+#event-stream.-hidden {
+    display: none;
 }
 
 /* Task Panel */

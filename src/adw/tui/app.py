@@ -33,6 +33,7 @@ from .log_watcher import LogWatcher, LogEvent, QuestionEvent
 from .widgets.task_list import TaskList
 from .widgets.log_viewer import LogViewer
 from .widgets.question_modal import QuestionModal
+from .widgets.event_stream import EventStream
 from ..protocol.messages import write_answer, AgentQuestion
 from ..agent.manager import AgentManager
 from ..agent.utils import generate_adw_id
@@ -437,6 +438,7 @@ class ADWApp(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear_logs", "Clear"),
+        Binding("e", "toggle_events", "Events", show=True),
         Binding("n", "new_task", "New Task", show=False),
         Binding("r", "refresh", "Refresh", show=False),
         Binding("escape", "cancel", "Cancel", show=False),
@@ -465,9 +467,13 @@ class ADWApp(App):
         header_text = f"[bold {COLORS['primary']}]⚡ ADW[/] [dim]v{__version__}[/]  [dim]│[/]  [italic {COLORS['muted']}]Ship features while you sleep[/]"
         yield Static(header_text, id="main-header")
 
-        with Vertical(id="main-container"):
-            yield TaskInbox()
-            yield DetailPanel()
+        with Horizontal(id="main-layout"):
+            with Vertical(id="main-container"):
+                yield TaskInbox()
+                yield DetailPanel()
+
+            # Event stream panel (hidden by default, toggle with E)
+            yield EventStream(id="event-stream")
 
         yield StatusLine()
 
@@ -1235,6 +1241,18 @@ class ADWApp(App):
     def action_clear_logs(self) -> None:
         log_viewer = self.query_one("#log-viewer", LogViewer)
         log_viewer.clear_logs()
+
+    def action_toggle_events(self) -> None:
+        """Toggle the event stream panel visibility."""
+        event_stream = self.query_one("#event-stream", EventStream)
+        event_stream.toggle_class("-hidden")
+
+        # Update status line to show toggle state
+        detail = self.query_one(DetailPanel)
+        if event_stream.has_class("-hidden"):
+            detail.add_message("[dim]Event stream hidden (press E to show)[/dim]")
+        else:
+            detail.add_message("[cyan]Event stream visible (press E to hide)[/cyan]")
 
     def action_new_task(self) -> None:
         self.query_one("#user-input", Input).focus()

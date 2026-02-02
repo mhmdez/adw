@@ -1849,6 +1849,339 @@ def screenshot_cmd(
 
 
 # =============================================================================
+# Event Observability Commands
+# =============================================================================
+
+
+@main.command("events")
+@click.option(
+    "--type",
+    "-t",
+    "event_type",
+    help="Filter by event type (e.g., tool_start, task_completed, error)",
+)
+@click.option(
+    "--session",
+    "-s",
+    "session_id",
+    help="Filter by session ID",
+)
+@click.option(
+    "--task",
+    "-k",
+    "task_id",
+    type=TASK_ID,
+    help="Filter by task/ADW ID",
+)
+@click.option(
+    "--since",
+    help="Only events since this time (e.g., 1h, 30m, 7d)",
+)
+@click.option(
+    "--limit",
+    "-n",
+    default=50,
+    help="Maximum number of events to show (default: 50)",
+)
+@click.option(
+    "--follow",
+    "-f",
+    is_flag=True,
+    help="Follow events in real-time",
+)
+@click.option(
+    "--json",
+    "-j",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON",
+)
+@click.option(
+    "--summary",
+    is_flag=True,
+    help="Show event type summary instead of listing events",
+)
+def events_cmd(
+    event_type: str | None,
+    session_id: str | None,
+    task_id: str | None,
+    since: str | None,
+    limit: int,
+    follow: bool,
+    as_json: bool,
+    summary: bool,
+) -> None:
+    """View and filter observability events.
+
+    Query the event database for tool executions, task status changes,
+    errors, and other observable events.
+
+    \\b
+    Examples:
+        adw events                      # Show recent events
+        adw events --type error         # Show only errors
+        adw events --task abc12345      # Events for specific task
+        adw events --since 1h           # Events from last hour
+        adw events --follow             # Watch events in real-time
+        adw events --summary            # Show event type counts
+    """
+    import json as json_lib
+    import time
+
+    from .observability import EventFilter, EventType, get_db
+
+    db = get_db()
+
+    # Parse event type filter
+    event_types = None
+    if event_type:
+        try:
+            event_types = [EventType(event_type)]
+        except ValueError:
+            # Try partial match
+            matches = [t for t in EventType if event_type.lower() in t.value.lower()]
+            if matches:
+                event_types = matches
+            else:
+                console.print(f"[red]Unknown event type: {event_type}[/red]")
+                console.print("[dim]Available types:[/dim]")
+                for t in EventType:
+                    console.print(f"  {t.value}")
+                return
+
+    # Parse since filter
+    since_dt = None
+    if since:
+        try:
+            since_dt = EventFilter.from_time_string(since)
+        except ValueError as e:
+            console.print(f"[red]Invalid time format: {e}[/red]")
+            console.print("[dim]Use format like: 1h, 30m, 7d, 2w[/dim]")
+            return
+
+    # Summary mode
+    if summary:
+        summary_data = db.get_event_summary(since=since_dt)
+        if not summary_data:
+            console.print("[yellow]No events found[/yellow]")
+            return
+
+        if as_json:
+            click.echo(json_lib.dumps(summary_data, indent=2))
+            return
+
+        console.print("[bold cyan]Event Summary[/bold cyan]")
+        if since:
+            console.print(f"[dim]Since: {since}[/dim]")
+        console.print()
+
+        total = sum(summary_data.values())
+        for etype, count in sorted(summary_data.items(), key=lambda x: -x[1]):
+            pct = (count / total) * 100
+            bar = "█" * int(pct / 5)
+            console.print(f"  {etype:<20} {count:>5}  {bar} ({pct:.1f}%)")
+
+        console.print()
+        console.print(f"[dim]Total: {total} events[/dim]")
+        return
+
+    # Build filter
+    filter_ = EventFilter(
+        event_types=event_types,
+        session_id=session_id,
+        task_id=task_id,
+        since=since_dt,
+        limit=limit,
+    )
+
+    # Follow mode - watch for new events
+    if follow:
+        console.print("[bold cyan]Watching events (Ctrl+C to stop)...[/bold cyan]")
+        console.print()
+        last_id = 0
+        try:
+            while True:
+                events = db.get_events(filter_)
+                for event in reversed(events):
+                    if event.id and event.id > last_id:
+                        _print_event(event, as_json)
+                        last_id = event.id
+                time.sleep(1)
+        except KeyboardInterrupt:
+            console.print()
+            console.print("[dim]Stopped watching[/dim]")
+        return
+
+    # Regular query
+    events = db.get_events(filter_)
+
+    if not events:
+        console.print("[yellow]No events found[/yellow]")
+        if event_type or session_id or task_id or since:
+            console.print("[dim]Try removing filters or adjusting time range[/dim]")
+        return
+
+    if as_json:
+        output = [e.to_dict() for e in events]
+        click.echo(json_lib.dumps(output, indent=2, default=str))
+        return
+
+    console.print(f"[bold cyan]Recent Events[/bold cyan] [dim]({len(events)} shown)[/dim]")
+    console.print()
+
+    for event in reversed(events):  # Show oldest first
+        _print_event(event, as_json=False)
+
+
+def _print_event(event, as_json: bool = False) -> None:
+    """Print a single event to console."""
+    import json as json_lib
+
+    if as_json:
+        click.echo(json_lib.dumps(event.to_dict(), default=str))
+        return
+
+    # Color-code by event type
+    color = "white"
+    icon = "•"
+
+    event_type = event.event_type.value
+    if "error" in event_type or "failed" in event_type:
+        color = "red"
+        icon = "✗"
+    elif "completed" in event_type or "success" in event_type or "end" in event_type:
+        color = "green"
+        icon = "✓"
+    elif "tool" in event_type:
+        color = "cyan"
+        icon = "⚙"
+    elif "start" in event_type:
+        color = "blue"
+        icon = "▶"
+    elif "warning" in event_type:
+        color = "yellow"
+        icon = "⚠"
+    elif "block" in event_type:
+        color = "red"
+        icon = "🛑"
+
+    # Format timestamp
+    ts = event.timestamp.strftime("%H:%M:%S")
+
+    # Task ID prefix
+    task_str = f"[dim][{event.task_id[:8]}][/dim] " if event.task_id else ""
+
+    # Event details
+    details = ""
+    if event.data:
+        if "tool_name" in event.data:
+            details = f" → {event.data['tool_name']}"
+        elif "message" in event.data:
+            msg = event.data["message"]
+            if len(msg) > 50:
+                msg = msg[:50] + "..."
+            details = f" → {msg}"
+        elif "status" in event.data:
+            details = f" → {event.data['status']}"
+
+    console.print(f"[dim]{ts}[/dim] {task_str}[{color}]{icon} {event_type}[/{color}]{details}")
+
+
+@main.command("sessions")
+@click.option(
+    "--task",
+    "-k",
+    "task_id",
+    type=TASK_ID,
+    help="Filter by task/ADW ID",
+)
+@click.option(
+    "--status",
+    "-s",
+    type=click.Choice(["running", "completed", "failed", "cancelled"]),
+    help="Filter by session status",
+)
+@click.option(
+    "--limit",
+    "-n",
+    default=20,
+    help="Maximum number of sessions to show (default: 20)",
+)
+@click.option(
+    "--json",
+    "-j",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON",
+)
+def sessions_cmd(
+    task_id: str | None,
+    status: str | None,
+    limit: int,
+    as_json: bool,
+) -> None:
+    """View agent sessions.
+
+    List sessions from the observability database.
+
+    \\b
+    Examples:
+        adw sessions                    # Show recent sessions
+        adw sessions --status running   # Show running sessions
+        adw sessions --task abc12345    # Sessions for specific task
+    """
+    import json as json_lib
+
+    from .observability import SessionStatus, get_db
+
+    db = get_db()
+
+    status_filter = SessionStatus(status) if status else None
+    sessions = db.get_sessions(task_id=task_id, status=status_filter, limit=limit)
+
+    if not sessions:
+        console.print("[yellow]No sessions found[/yellow]")
+        return
+
+    if as_json:
+        output = [s.to_dict() for s in sessions]
+        click.echo(json_lib.dumps(output, indent=2, default=str))
+        return
+
+    console.print(f"[bold cyan]Sessions[/bold cyan] [dim]({len(sessions)} shown)[/dim]")
+    console.print()
+
+    for session in sessions:
+        status_color = {
+            SessionStatus.RUNNING: "blue",
+            SessionStatus.COMPLETED: "green",
+            SessionStatus.FAILED: "red",
+            SessionStatus.CANCELLED: "yellow",
+        }.get(session.status, "white")
+
+        status_icon = {
+            SessionStatus.RUNNING: "▶",
+            SessionStatus.COMPLETED: "✓",
+            SessionStatus.FAILED: "✗",
+            SessionStatus.CANCELLED: "⊘",
+        }.get(session.status, "•")
+
+        task_str = f"[dim][{session.task_id[:8]}][/dim] " if session.task_id else ""
+        start_time = session.start_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        console.print(
+            f"[bold]{session.id[:12]}[/bold] {task_str}"
+            f"[{status_color}]{status_icon} {session.status.value}[/{status_color}] "
+            f"[dim]({session.duration_str})[/dim]"
+        )
+        console.print(f"  [dim]Started: {start_time}[/dim]")
+        if session.end_time:
+            end_time = session.end_time.strftime("%Y-%m-%d %H:%M:%S")
+            console.print(f"  [dim]Ended: {end_time}[/dim]")
+        console.print()
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 
