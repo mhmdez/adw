@@ -1484,6 +1484,268 @@ def plugin_status(name: str | None) -> None:
 
 
 # =============================================================================
+# Recovery Commands (Phase 8)
+# =============================================================================
+
+
+@main.command("rollback")
+@click.argument("task_id", type=TASK_ID)
+@click.option(
+    "--checkpoint",
+    "-c",
+    help="Specific checkpoint ID to rollback to (default: last successful)",
+)
+@click.option(
+    "--all",
+    "-a",
+    "rollback_all",
+    is_flag=True,
+    help="Rollback ALL changes made by this task",
+)
+@click.confirmation_option(prompt="Are you sure you want to rollback? This will discard changes.")
+def rollback_cmd(task_id: str, checkpoint: str | None, rollback_all: bool) -> None:
+    """Rollback a task to a previous checkpoint.
+
+    Undoes changes made by a task by resetting to a checkpoint.
+    By default, rolls back to the last successful checkpoint.
+
+    \\b
+    Examples:
+        adw rollback abc12345                  # Rollback to last checkpoint
+        adw rollback abc12345 -c 20260202T103045  # Rollback to specific checkpoint
+        adw rollback abc12345 --all            # Undo ALL task changes
+    """
+    from .recovery.checkpoints import (
+        rollback_to_checkpoint,
+        rollback_all_changes,
+        get_last_successful_checkpoint,
+        load_checkpoint,
+        list_checkpoints,
+    )
+    from .agent.state import ADWState
+    from .agent.task_updater import update_task_status
+
+    # Load task state to get worktree path
+    state = ADWState.load(task_id)
+    worktree_path = Path(state.worktree_path) if state and state.worktree_path else None
+
+    if rollback_all:
+        console.print(f"[yellow]Rolling back ALL changes for task {task_id}...[/yellow]")
+        success = rollback_all_changes(task_id, worktree_path)
+    elif checkpoint:
+        cp = load_checkpoint(task_id, checkpoint)
+        if not cp:
+            console.print(f"[red]Checkpoint '{checkpoint}' not found[/red]")
+            console.print("[dim]Use 'adw checkpoints <task_id>' to see available checkpoints[/dim]")
+            return
+        console.print(f"[yellow]Rolling back to checkpoint {checkpoint}...[/yellow]")
+        success = rollback_to_checkpoint(task_id, checkpoint, worktree_path)
+    else:
+        cp = get_last_successful_checkpoint(task_id)
+        if not cp:
+            console.print("[red]No successful checkpoints found for this task[/red]")
+            console.print("[dim]Use 'adw checkpoints <task_id>' to see available checkpoints[/dim]")
+            return
+        console.print(f"[yellow]Rolling back to last checkpoint ({cp.checkpoint_id})...[/yellow]")
+        success = rollback_to_checkpoint(task_id, cp.checkpoint_id, worktree_path)
+
+    if success:
+        console.print("[green]✓ Rollback successful[/green]")
+        # Mark task as failed
+        try:
+            update_task_status(task_id, "failed")
+            console.print("[dim]Task marked as failed[/dim]")
+        except Exception:
+            pass
+    else:
+        console.print("[red]✗ Rollback failed[/red]")
+        console.print("[dim]Check if the task has checkpoints with git commits[/dim]")
+
+
+@main.command("checkpoints")
+@click.argument("task_id", type=TASK_ID)
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def checkpoints_cmd(task_id: str, as_json: bool) -> None:
+    """List checkpoints for a task.
+
+    Shows all saved checkpoints, their phases, and status.
+
+    \\b
+    Examples:
+        adw checkpoints abc12345
+        adw checkpoints abc12345 --json
+    """
+    from .recovery.checkpoints import list_checkpoints
+
+    checkpoints = list_checkpoints(task_id)
+
+    if not checkpoints:
+        console.print(f"[yellow]No checkpoints found for task {task_id}[/yellow]")
+        return
+
+    if as_json:
+        import json
+        output = [cp.to_dict() for cp in checkpoints]
+        click.echo(json.dumps(output, indent=2))
+        return
+
+    console.print(f"[bold cyan]Checkpoints for {task_id}[/bold cyan]")
+    console.print()
+
+    for cp in checkpoints:
+        status_icon = "[green]✓[/green]" if cp.success else "[red]✗[/red]"
+        console.print(f"{status_icon} [bold]{cp.checkpoint_id}[/bold]")
+        console.print(f"   Phase: {cp.phase}")
+        console.print(f"   Step: {cp.step}")
+        console.print(f"   Time: {cp.timestamp}")
+        if cp.git_commit:
+            console.print(f"   Commit: {cp.git_commit}")
+        if cp.files_modified:
+            console.print(f"   Files: {len(cp.files_modified)} modified")
+        console.print()
+
+
+@main.command("resume-task")
+@click.argument("task_id", type=TASK_ID)
+@click.option(
+    "--checkpoint",
+    "-c",
+    help="Resume from specific checkpoint ID (default: last successful)",
+)
+@click.option(
+    "--workflow",
+    "-w",
+    type=click.Choice(["simple", "standard", "sdlc"]),
+    default="standard",
+    help="Workflow to use for resumption (default: standard)",
+)
+def resume_task_cmd(task_id: str, checkpoint: str | None, workflow: str) -> None:
+    """Resume a failed task from its last checkpoint.
+
+    Loads the checkpoint state and continues the workflow
+    from where it left off.
+
+    \\b
+    Examples:
+        adw resume-task abc12345              # Resume from last checkpoint
+        adw resume-task abc12345 -c 20260202T103045  # Resume from specific checkpoint
+        adw resume-task abc12345 -w sdlc      # Resume with SDLC workflow
+    """
+    from .recovery.checkpoints import (
+        CheckpointManager,
+        get_last_successful_checkpoint,
+        load_checkpoint,
+    )
+    from .agent.state import ADWState
+    from .agent.task_updater import update_task_status
+
+    # Get checkpoint
+    if checkpoint:
+        cp = load_checkpoint(task_id, checkpoint)
+        if not cp:
+            console.print(f"[red]Checkpoint '{checkpoint}' not found[/red]")
+            return
+    else:
+        cp = get_last_successful_checkpoint(task_id)
+        if not cp:
+            console.print(f"[red]No successful checkpoints found for task {task_id}[/red]")
+            console.print("[dim]Cannot resume without a checkpoint[/dim]")
+            return
+
+    # Load task state
+    state = ADWState.load(task_id)
+    if not state:
+        console.print(f"[red]Task state not found for {task_id}[/red]")
+        return
+
+    console.print(f"[bold cyan]Resuming task {task_id}[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Checkpoint: {cp.checkpoint_id}[/dim]")
+    console.print(f"[dim]Phase: {cp.phase}[/dim]")
+    console.print(f"[dim]Step: {cp.step}[/dim]")
+    console.print()
+
+    # Get resume context
+    manager = CheckpointManager(task_id)
+    resume_prompt = manager.format_resume_prompt()
+
+    if resume_prompt:
+        console.print("[bold]Resume Context:[/bold]")
+        console.print(resume_prompt)
+        console.print()
+
+    # Mark task as in progress
+    try:
+        update_task_status(task_id, "in_progress")
+    except Exception:
+        pass
+
+    # Run the appropriate workflow
+    worktree_path = state.worktree_path
+    description = state.task_description
+
+    # Add resume context to description
+    if resume_prompt:
+        description = f"{description}\n\n{resume_prompt}"
+
+    console.print(f"[dim]Starting {workflow} workflow...[/dim]")
+    console.print()
+
+    if workflow == "simple":
+        from .workflows.simple import run_simple_workflow
+        success = run_simple_workflow(
+            task_description=description,
+            worktree_name=worktree_path,
+            adw_id=task_id,
+        )
+    elif workflow == "sdlc":
+        from .workflows.sdlc import run_sdlc_workflow
+        success = run_sdlc_workflow(
+            task_description=description,
+            worktree_name=worktree_path,
+            adw_id=task_id,
+        )
+    else:
+        from .workflows.standard import run_standard_workflow
+        success = run_standard_workflow(
+            task_description=description,
+            worktree_name=worktree_path,
+            adw_id=task_id,
+        )
+
+    if success:
+        console.print()
+        console.print("[green]✓ Task resumed and completed successfully[/green]")
+    else:
+        console.print()
+        console.print("[red]✗ Task failed again[/red]")
+        console.print(f"[dim]Check logs in agents/{task_id}/[/dim]")
+
+
+@main.command("escalation")
+@click.argument("task_id", type=TASK_ID)
+def escalation_cmd(task_id: str) -> None:
+    """View escalation report for a failed task.
+
+    Shows the generated escalation report with error details
+    and suggested actions.
+
+    \\b
+    Examples:
+        adw escalation abc12345
+    """
+    report_path = Path("agents") / task_id / "escalation.md"
+
+    if not report_path.exists():
+        console.print(f"[yellow]No escalation report found for task {task_id}[/yellow]")
+        console.print("[dim]Escalation reports are generated when retries are exhausted[/dim]")
+        return
+
+    content = report_path.read_text()
+    console.print(content)
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 
