@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -1743,6 +1744,108 @@ def escalation_cmd(task_id: str) -> None:
 
     content = report_path.read_text()
     console.print(content)
+
+
+# =============================================================================
+# Screenshot Commands
+# =============================================================================
+
+
+@main.command("screenshot")
+@click.option("--port", "-p", type=int, default=3000, help="Port of dev server to capture")
+@click.option("--delay", "-d", type=float, default=2.0, help="Delay in seconds before capture")
+@click.option("--output", "-o", type=click.Path(), help="Output file path")
+@click.option("--browser", "-b", is_flag=True, help="Use browser capture (requires Playwright)")
+@click.option("--list", "-l", "list_screenshots", is_flag=True, help="List recent screenshots")
+@click.option("--task", "-t", type=str, help="Task ID for screenshot organization")
+def screenshot_cmd(
+    port: int,
+    delay: float,
+    output: str | None,
+    browser: bool,
+    list_screenshots: bool,
+    task: str | None,
+) -> None:
+    """Capture screenshots of running dev servers.
+
+    Takes a screenshot of a dev server running on the specified port.
+    Can use either macOS screencapture or browser-based capture (Playwright).
+
+    \\b
+    Examples:
+        adw screenshot                    # Capture from default port 3000
+        adw screenshot --port 5173        # Capture from Vite dev server
+        adw screenshot --browser          # Use Playwright for browser capture
+        adw screenshot --list             # List recent screenshots
+        adw screenshot -o preview.png     # Save to specific file
+    """
+    from .utils.screenshot import (
+        capture_browser_screenshot,
+        capture_screenshot,
+        get_dev_server_url,
+        get_screenshots_dir,
+        is_dev_server_running,
+        list_screenshots as list_shots,
+    )
+
+    # List mode
+    if list_screenshots:
+        screenshots = list_shots(task)
+        if not screenshots:
+            console.print("[yellow]No screenshots found[/yellow]")
+            return
+
+        console.print(f"[bold]Recent screenshots ({len(screenshots)}):[/bold]")
+        for shot in screenshots[:10]:
+            mtime = datetime.fromtimestamp(shot.stat().st_mtime)
+            size_kb = shot.stat().st_size // 1024
+            console.print(f"  {shot.name} - {mtime:%Y-%m-%d %H:%M} ({size_kb}KB)")
+        return
+
+    # Check if server is running
+    if not is_dev_server_running(port):
+        console.print(f"[yellow]No server detected on port {port}[/yellow]")
+        console.print(
+            "[dim]Start a dev server first, or specify a different port with --port[/dim]"
+        )
+        return
+
+    # Determine output path
+    if output:
+        output_path = Path(output)
+    else:
+        screenshots_dir = get_screenshots_dir(task)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = screenshots_dir / f"screenshot-{timestamp}.png"
+
+    console.print(f"[dim]Waiting {delay}s for page to settle...[/dim]")
+    import time
+    time.sleep(delay)
+
+    try:
+        if browser:
+            url = get_dev_server_url(port)
+            console.print(f"[dim]Capturing browser screenshot of {url}...[/dim]")
+            result_path = capture_browser_screenshot(
+                url=url,
+                output_path=output_path,
+                wait_time=1.0,
+            )
+        else:
+            console.print("[dim]Capturing desktop screenshot...[/dim]")
+            result_path = capture_screenshot(output_path=output_path)
+
+        console.print(f"[green]✓[/green] Screenshot saved: {result_path}")
+
+    except ImportError as e:
+        console.print(f"[red]✗[/red] {e}")
+        console.print(
+            "[dim]Install with: pip install playwright && playwright install chromium[/dim]"
+        )
+    except RuntimeError as e:
+        console.print(f"[red]✗[/red] Screenshot failed: {e}")
+    except OSError as e:
+        console.print(f"[red]✗[/red] Screenshot failed: {e}")
 
 
 # =============================================================================

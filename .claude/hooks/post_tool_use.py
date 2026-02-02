@@ -3,19 +3,51 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Tool usage logging for observability.
+"""Tool usage logging for observability with screenshot capture.
 
 Logs all tool calls to .adw/tool_usage.jsonl with automatic rotation.
+Captures screenshots when dev server start commands are detected.
 """
 
 import json
 import os
+import re
+import socket
+import subprocess
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # Maximum log file size before rotation (10MB)
 MAX_LOG_SIZE = 10 * 1024 * 1024
+
+# Dev server start command patterns
+DEV_SERVER_PATTERNS = [
+    r"npm\s+run\s+dev",
+    r"npm\s+start",
+    r"bun\s+run\s+dev",
+    r"bun\s+dev",
+    r"pnpm\s+dev",
+    r"pnpm\s+run\s+dev",
+    r"yarn\s+dev",
+    r"yarn\s+run\s+dev",
+    r"vite",
+    r"next\s+dev",
+    r"nuxt\s+dev",
+    r"python\s+-m\s+http\.server",
+    r"uvicorn\s+",
+    r"flask\s+run",
+    r"gunicorn\s+",
+    r"fastapi\s+dev",
+    r"php\s+-[sS]",
+    r"ng\s+serve",
+]
+
+# Common dev server ports
+DEV_SERVER_PORTS = [3000, 3001, 5173, 5174, 8000, 8080, 8888, 4200, 4000]
 
 
 def get_adw_dir() -> Path:
@@ -112,6 +144,101 @@ def sanitize_params(params: dict) -> dict:
     return sanitized
 
 
+def is_dev_server_command(command: str) -> bool:
+    """Check if a command is starting a development server."""
+    if not command:
+        return False
+    command_lower = command.lower()
+    for pattern in DEV_SERVER_PATTERNS:
+        if re.search(pattern, command_lower):
+            return True
+    return False
+
+
+def extract_port_from_command(command: str) -> Optional[int]:
+    """Extract port number from a dev server command."""
+    port_patterns = [
+        r"--port[=\s]+(\d+)",
+        r"-p[=\s]+(\d+)",
+        r"-P[=\s]+(\d+)",
+        r":(\d{4,5})\b",
+        r"PORT=(\d+)",
+        r"\.server\s+(\d+)",
+    ]
+    for pattern in port_patterns:
+        match = re.search(pattern, command)
+        if match:
+            port = int(match.group(1))
+            if 1024 <= port <= 65535:
+                return port
+    return None
+
+
+def is_port_open(port: int) -> bool:
+    """Check if a port is open (server listening)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    try:
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+    finally:
+        sock.close()
+
+
+def detect_running_port() -> Optional[int]:
+    """Find the first dev server port that's open."""
+    for port in DEV_SERVER_PORTS:
+        if is_port_open(port):
+            return port
+    return None
+
+
+def capture_screenshot_async(task_id: Optional[str], port: int) -> None:
+    """Capture screenshot in background after server starts."""
+    def capture():
+        # Wait for server to be ready
+        time.sleep(3)
+
+        # Verify port is still open
+        if not is_port_open(port):
+            return
+
+        # Get screenshots directory
+        project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+        if task_id:
+            screenshots_dir = Path(project_dir) / "agents" / task_id / "screenshots"
+        else:
+            screenshots_dir = Path(project_dir) / ".adw" / "screenshots"
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = screenshots_dir / f"screenshot-{timestamp}.png"
+
+        # Try to capture with screencapture (macOS)
+        try:
+            result = subprocess.run(
+                ["screencapture", "-x", str(output_path)],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and output_path.exists():
+                # Log successful capture
+                log_file = Path(project_dir) / ".adw" / "screenshots.jsonl"
+                entry = {
+                    "timestamp": datetime.now().isoformat(),
+                    "task_id": task_id,
+                    "port": port,
+                    "path": str(output_path),
+                }
+                with open(log_file, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
+    # Run in background thread
+    thread = threading.Thread(target=capture, daemon=True)
+    thread.start()
+
+
 def log_tool_usage(
     tool_name: str,
     tool_input: dict,
@@ -159,6 +286,23 @@ def main() -> None:
 
     # Log the tool usage
     log_tool_usage(tool_name, tool_input, tool_result, session_id)
+
+    # Check for dev server start commands and capture screenshots
+    if tool_name == "Bash":
+        command = tool_input.get("command", "")
+        if is_dev_server_command(command):
+            # Try to extract port from command, or detect running port
+            port = extract_port_from_command(command)
+            if port is None:
+                port = detect_running_port()
+            if port is None:
+                port = 3000  # Default fallback
+
+            # Get task ID from environment if available
+            task_id = os.environ.get("ADW_TASK_ID")
+
+            # Capture screenshot asynchronously
+            capture_screenshot_async(task_id, port)
 
     # Always allow (this is post-tool, nothing to block)
     sys.exit(0)
