@@ -299,8 +299,9 @@ class TestConcurrentLimiting:
         daemon._task_agents["Task 2"] = "adw2"
 
         # Mock manager.poll to return completed tasks
+        # poll() returns list of (adw_id, return_code, stderr)
         with patch.object(daemon.manager, "poll") as mock_poll:
-            mock_poll.return_value = [("adw1", 0)]
+            mock_poll.return_value = [("adw1", 0, "")]
             with patch("adw.triggers.cron.mark_done"):
                 completed = daemon._check_completions()
 

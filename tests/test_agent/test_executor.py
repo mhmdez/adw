@@ -21,15 +21,20 @@ from adw.agent.models import AgentPromptRequest, AgentPromptResponse, RetryCode
 class TestGetSafeEnv:
     """Test get_safe_env function."""
 
-    def test_filters_environment_variables(self):
+    def test_passes_full_environment(self):
+        """Test that full environment is passed for Claude Code OAuth support.
+
+        Note: Previously this filtered to SAFE_ENV_VARS only, but this broke
+        Claude Code OAuth. Now we pass the full environment.
+        """
         with patch.dict(
             os.environ,
             {
                 "ANTHROPIC_API_KEY": "test-key",
                 "HOME": "/home/user",
                 "PATH": "/usr/bin",
-                "DANGEROUS_VAR": "should-not-appear",
-                "RANDOM_VAR": "also-filtered",
+                "SOME_OTHER_VAR": "should-appear",
+                "ANOTHER_VAR": "also-included",
             },
             clear=True,
         ):
@@ -39,8 +44,9 @@ class TestGetSafeEnv:
             assert "PATH" in env
             assert "PYTHONUNBUFFERED" in env
             assert env["PYTHONUNBUFFERED"] == "1"
-            assert "DANGEROUS_VAR" not in env
-            assert "RANDOM_VAR" not in env
+            # Now passes full environment for OAuth support
+            assert "SOME_OTHER_VAR" in env
+            assert "ANOTHER_VAR" in env
 
     def test_includes_all_safe_vars(self):
         with patch.dict(
