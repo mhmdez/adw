@@ -70,7 +70,7 @@ class HookResult:
 
     def to_json(self) -> str:
         """Convert to JSON for hook response."""
-        result = {"success": self.success}
+        result: dict[str, Any] = {"success": self.success}
         if self.message:
             result["message"] = self.message
         if self.block:
@@ -135,7 +135,7 @@ def track_file_operation(event: HookEvent) -> None:
 
     bundle_file = bundle_dir / f"{date_str}_{session_id[:8]}.jsonl"
 
-    entry = {
+    entry: dict[str, Any] = {
         "timestamp": event.timestamp,
         "session_id": event.session_id,
         "tool": event.tool_name,
