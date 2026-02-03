@@ -172,6 +172,121 @@ class TestTaskIsEligible:
         assert task.is_eligible is False
 
 
+class TestTaskWorkflow:
+    """Tests for Task.workflow property."""
+
+    def test_workflow_none_when_no_tag(self) -> None:
+        """Test that workflow is None when no workflow tag is present."""
+        task = Task(description="Test task", tags=["opus"])
+        assert task.workflow is None
+
+    def test_workflow_sdlc(self) -> None:
+        """Test that {sdlc} tag sets workflow to sdlc."""
+        task = Task(description="Test task", tags=["sdlc"])
+        assert task.workflow == "sdlc"
+
+    def test_workflow_simple(self) -> None:
+        """Test that {simple} tag sets workflow to simple."""
+        task = Task(description="Test task", tags=["simple"])
+        assert task.workflow == "simple"
+
+    def test_workflow_standard(self) -> None:
+        """Test that {standard} tag sets workflow to standard."""
+        task = Task(description="Test task", tags=["standard"])
+        assert task.workflow == "standard"
+
+    def test_workflow_bug_fix(self) -> None:
+        """Test that {bug-fix} tag sets workflow to bug-fix."""
+        task = Task(description="Test task", tags=["bug-fix"])
+        assert task.workflow == "bug-fix"
+
+    def test_workflow_bugfix_alias(self) -> None:
+        """Test that {bugfix} tag is an alias for bug-fix."""
+        task = Task(description="Test task", tags=["bugfix"])
+        assert task.workflow == "bug-fix"
+
+    def test_workflow_prototype(self) -> None:
+        """Test that {prototype} tag sets workflow to prototype."""
+        task = Task(description="Test task", tags=["prototype"])
+        assert task.workflow == "prototype"
+
+    def test_workflow_first_match_wins(self) -> None:
+        """Test that first workflow tag in list wins."""
+        task = Task(description="Test task", tags=["simple", "sdlc"])
+        assert task.workflow == "simple"
+
+    def test_workflow_with_model_tag(self) -> None:
+        """Test that workflow and model tags can coexist."""
+        task = Task(description="Test task", tags=["opus", "sdlc"])
+        assert task.workflow == "sdlc"
+        assert task.model == "opus"
+
+
+class TestTaskPriority:
+    """Tests for Task.priority property."""
+
+    def test_priority_none_when_no_tag(self) -> None:
+        """Test that priority is None when no priority tag is present."""
+        task = Task(description="Test task", tags=["opus"])
+        assert task.priority is None
+
+    def test_priority_p0(self) -> None:
+        """Test that {p0} tag sets priority to p0."""
+        task = Task(description="Test task", tags=["p0"])
+        assert task.priority == "p0"
+
+    def test_priority_p1(self) -> None:
+        """Test that {p1} tag sets priority to p1."""
+        task = Task(description="Test task", tags=["p1"])
+        assert task.priority == "p1"
+
+    def test_priority_p2(self) -> None:
+        """Test that {p2} tag sets priority to p2."""
+        task = Task(description="Test task", tags=["p2"])
+        assert task.priority == "p2"
+
+    def test_priority_p3(self) -> None:
+        """Test that {p3} tag sets priority to p3."""
+        task = Task(description="Test task", tags=["p3"])
+        assert task.priority == "p3"
+
+    def test_priority_with_model_and_workflow(self) -> None:
+        """Test that priority, model, and workflow can coexist."""
+        task = Task(description="Test task", tags=["opus", "sdlc", "p0"])
+        assert task.priority == "p0"
+        assert task.model == "opus"
+        assert task.workflow == "sdlc"
+
+
+class TestTaskSkipReview:
+    """Tests for Task.skip_review property."""
+
+    def test_skip_review_false_by_default(self) -> None:
+        """Test that skip_review is False by default."""
+        task = Task(description="Test task", tags=["opus"])
+        assert task.skip_review is False
+
+    def test_skip_review_underscore(self) -> None:
+        """Test that {skip_review} tag enables skip_review."""
+        task = Task(description="Test task", tags=["skip_review"])
+        assert task.skip_review is True
+
+    def test_skip_review_hyphen(self) -> None:
+        """Test that {skip-review} tag enables skip_review."""
+        task = Task(description="Test task", tags=["skip-review"])
+        assert task.skip_review is True
+
+    def test_no_review_underscore(self) -> None:
+        """Test that {no_review} tag enables skip_review."""
+        task = Task(description="Test task", tags=["no_review"])
+        assert task.skip_review is True
+
+    def test_no_review_hyphen(self) -> None:
+        """Test that {no-review} tag enables skip_review."""
+        task = Task(description="Test task", tags=["no-review"])
+        assert task.skip_review is True
+
+
 class TestGetEligibleTasksIntegration:
     """Integration tests for get_eligible_tasks with real tasks.md parsing."""
 

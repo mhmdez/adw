@@ -117,7 +117,7 @@ class ParsedIssueTemplate:
 
         # Map issue types to default workflows
         workflow_map = {
-            IssueType.BUG: "standard",
+            IssueType.BUG: "bug-fix",  # Use focused bug-fix workflow
             IssueType.FEATURE: "sdlc",
             IssueType.REFACTOR: "standard",
             IssueType.DOCS: "simple",
@@ -393,10 +393,13 @@ def _apply_frontmatter(template: ParsedIssueTemplate, frontmatter: dict[str, Any
         except ValueError:
             pass
 
-    # Workflow
+    # Workflow (supports all built-in workflows)
     if "workflow" in frontmatter:
         wf = frontmatter["workflow"].lower()
-        if wf in ("simple", "standard", "sdlc"):
+        # Normalize aliases
+        if wf in ("bugfix", "bug_fix"):
+            wf = "bug-fix"
+        if wf in ("simple", "standard", "sdlc", "bug-fix", "prototype"):
             template.workflow = wf
 
     # Model
@@ -469,10 +472,19 @@ def _apply_sections(template: ParsedIssueTemplate, sections: dict[str, str]) -> 
 
 def _apply_inline_tags(template: ParsedIssueTemplate, tags: list[str]) -> None:
     """Apply inline tags to template."""
+    # Workflow aliases for normalization
+    workflow_aliases = {
+        "bugfix": "bug-fix",
+        "bug_fix": "bug-fix",
+    }
+
     for tag in tags:
-        # Workflow tags
-        if tag in ("simple", "standard", "sdlc"):
-            template.workflow = tag
+        # Normalize tag
+        normalized = workflow_aliases.get(tag, tag)
+
+        # Workflow tags (all built-in workflows)
+        if normalized in ("simple", "standard", "sdlc", "bug-fix", "prototype"):
+            template.workflow = normalized
         # Model tags
         elif tag in ("sonnet", "opus", "haiku"):
             template.model = tag
@@ -521,14 +533,22 @@ def extract_config_from_labels(labels: list[str]) -> dict[str, str | None]:
         "type": None,
     }
 
+    # Valid workflow names (all built-in workflows)
+    valid_workflows = ("simple", "standard", "sdlc", "bug-fix", "prototype")
+    # Workflow aliases
+    workflow_aliases = {"bugfix": "bug-fix", "bug_fix": "bug-fix"}
+
     for label in labels:
         label_lower = label.lower()
 
         # Check for prefixed labels (workflow:sdlc, model:opus, etc.)
         if ":" in label_lower:
             prefix, value = label_lower.split(":", 1)
-            if prefix == "workflow" and value in ("simple", "standard", "sdlc"):
-                config["workflow"] = value
+            # Normalize workflow aliases
+            if prefix == "workflow":
+                value = workflow_aliases.get(value, value)
+                if value in valid_workflows:
+                    config["workflow"] = value
             elif prefix == "model" and value in ("sonnet", "opus", "haiku"):
                 config["model"] = value
             elif prefix == "priority" and value in ("p0", "p1", "p2", "p3"):
@@ -537,14 +557,17 @@ def extract_config_from_labels(labels: list[str]) -> dict[str, str | None]:
                 config["type"] = value
 
         # Check for direct label matches (e.g., label named "sdlc" or "opus")
-        elif label_lower in ("simple", "standard", "sdlc"):
-            config["workflow"] = label_lower
-        elif label_lower in ("sonnet", "opus", "haiku"):
-            config["model"] = label_lower
-        elif label_lower in ("p0", "p1", "p2", "p3"):
-            config["priority"] = label_lower
-        elif label_lower in ("bug", "feature", "refactor", "docs", "test", "chore"):
-            config["type"] = label_lower
+        else:
+            # Normalize workflow aliases
+            normalized = workflow_aliases.get(label_lower, label_lower)
+            if normalized in valid_workflows:
+                config["workflow"] = normalized
+            elif label_lower in ("sonnet", "opus", "haiku"):
+                config["model"] = label_lower
+            elif label_lower in ("p0", "p1", "p2", "p3"):
+                config["priority"] = label_lower
+            elif label_lower in ("bug", "feature", "refactor", "docs", "test", "chore"):
+                config["type"] = label_lower
 
     return config
 

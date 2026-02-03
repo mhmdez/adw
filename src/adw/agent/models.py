@@ -27,6 +27,7 @@ class RetryCode(str, Enum):
 
 class AgentPromptRequest(BaseModel):
     """Request to execute a prompt."""
+
     prompt: str
     adw_id: str
     agent_name: str = "default"
@@ -38,6 +39,7 @@ class AgentPromptRequest(BaseModel):
 
 class AgentPromptResponse(BaseModel):
     """Response from agent execution."""
+
     output: str
     success: bool
     session_id: str | None = None
@@ -48,6 +50,7 @@ class AgentPromptResponse(BaseModel):
 
 class Task(BaseModel):
     """Task from tasks.md."""
+
     description: str
     status: TaskStatus = TaskStatus.PENDING
     adw_id: str | None = None
@@ -79,9 +82,73 @@ class Task(BaseModel):
             return "haiku"
         return "sonnet"
 
+    @property
+    def workflow(self) -> str | None:
+        """Get workflow from tags if specified.
+
+        Recognized workflow tags:
+        - {sdlc} - Full SDLC workflow
+        - {simple} - Quick build-only workflow
+        - {standard} - Plan-implement-update workflow
+        - {bug-fix} or {bugfix} - Focused bug fixing
+        - {prototype} - Rapid prototyping
+
+        Returns:
+            Workflow name or None if not specified in tags.
+        """
+        # Known workflow names - check in order of specificity
+        workflow_tags = {
+            "sdlc": "sdlc",
+            "simple": "simple",
+            "standard": "standard",
+            "bug-fix": "bug-fix",
+            "bugfix": "bug-fix",  # Alias
+            "prototype": "prototype",
+        }
+
+        for tag in self.tags:
+            if tag in workflow_tags:
+                return workflow_tags[tag]
+
+        return None
+
+    @property
+    def priority(self) -> str | None:
+        """Get priority from tags if specified.
+
+        Recognized priority tags:
+        - {p0} - Critical/immediate
+        - {p1} - High priority
+        - {p2} - Medium priority
+        - {p3} - Low priority
+
+        Returns:
+            Priority level (p0-p3) or None if not specified.
+        """
+        for tag in self.tags:
+            if tag in ("p0", "p1", "p2", "p3"):
+                return tag
+
+        return None
+
+    @property
+    def skip_review(self) -> bool:
+        """Check if task should skip review phase.
+
+        Recognized tags:
+        - {skip_review} or {skip-review} - Skip review phase
+        - {no_review} or {no-review} - Skip review phase
+
+        Returns:
+            True if review should be skipped.
+        """
+        skip_tags = {"skip_review", "skip-review", "no_review", "no-review"}
+        return bool(skip_tags & set(self.tags))
+
 
 class Worktree(BaseModel):
     """Worktree section from tasks.md."""
+
     name: str
     tasks: list[Task] = Field(default_factory=list)
 

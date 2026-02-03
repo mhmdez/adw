@@ -114,9 +114,9 @@ class TestParsedIssueTemplate:
 
     def test_get_workflow_or_default_from_type(self) -> None:
         """Test deriving workflow from issue type."""
-        # Bug -> standard
+        # Bug -> bug-fix (focused bug fixing workflow)
         template = ParsedIssueTemplate(issue_type=IssueType.BUG)
-        assert template.get_workflow_or_default() == "standard"
+        assert template.get_workflow_or_default() == "bug-fix"
 
         # Feature -> sdlc
         template = ParsedIssueTemplate(issue_type=IssueType.FEATURE)
@@ -394,6 +394,16 @@ class TestExtractInlineTags:
         tags = extract_inline_tags("Add {feature-flag} support")
         assert tags == ["feature-flag"]
 
+    def test_bug_fix_workflow_tag(self) -> None:
+        """Test {bug-fix} workflow tag extraction."""
+        tags = extract_inline_tags("Fix login issue {bug-fix}")
+        assert tags == ["bug-fix"]
+
+    def test_prototype_workflow_tag(self) -> None:
+        """Test {prototype} workflow tag extraction."""
+        tags = extract_inline_tags("Quick prototype {prototype} {haiku}")
+        assert tags == ["prototype", "haiku"]
+
 
 # =============================================================================
 # Label Configuration Tests
@@ -451,6 +461,30 @@ class TestExtractConfigFromLabels:
 
         assert config["workflow"] == "sdlc"
         assert config["model"] == "opus"
+
+    def test_bug_fix_workflow_label(self) -> None:
+        """Test bug-fix workflow label."""
+        labels = ["workflow:bug-fix"]
+        config = extract_config_from_labels(labels)
+        assert config["workflow"] == "bug-fix"
+
+    def test_bugfix_alias_label(self) -> None:
+        """Test bugfix alias is normalized to bug-fix."""
+        labels = ["bugfix"]
+        config = extract_config_from_labels(labels)
+        assert config["workflow"] == "bug-fix"
+
+    def test_prototype_workflow_label(self) -> None:
+        """Test prototype workflow label."""
+        labels = ["prototype"]
+        config = extract_config_from_labels(labels)
+        assert config["workflow"] == "prototype"
+
+    def test_prefixed_prototype_workflow_label(self) -> None:
+        """Test prefixed prototype workflow label."""
+        labels = ["workflow:prototype"]
+        config = extract_config_from_labels(labels)
+        assert config["workflow"] == "prototype"
 
 
 # =============================================================================
@@ -683,8 +717,8 @@ It crashes"""
 
         template = parse_issue_body(body)
 
-        # Bug defaults to standard workflow
-        assert template.get_workflow_or_default() == "standard"
+        # Bug defaults to bug-fix workflow (focused bug fixing)
+        assert template.get_workflow_or_default() == "bug-fix"
         # P0 defaults to opus
         assert template.get_model_or_default() == "opus"
 
