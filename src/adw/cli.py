@@ -79,9 +79,30 @@ def main(ctx: click.Context, version: bool, debug: bool, no_update_check: bool) 
 
 
 @main.command()
-def dashboard() -> None:
-    """Open the interactive TUI dashboard."""
-    run_tui()
+@click.option("--web", "-w", is_flag=True, help="Open web dashboard instead of TUI")
+@click.option("--port", "-p", default=3939, help="Port for web dashboard (default: 3939)")
+@click.option("--host", "-h", default="0.0.0.0", help="Host for web dashboard (default: 0.0.0.0)")
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
+def dashboard(web: bool, port: int, host: str, reload: bool) -> None:
+    """Open the interactive TUI dashboard.
+
+    Use --web to open the web-based dashboard instead.
+
+    \\b
+    Examples:
+        adw dashboard           # TUI dashboard
+        adw dashboard --web     # Web dashboard on port 3939
+        adw dashboard --web -p 8080  # Web dashboard on port 8080
+    """
+    if web:
+        from .dashboard import start_dashboard_server
+
+        console.print("[bold cyan]Starting ADW Web Dashboard[/bold cyan]")
+        console.print(f"[dim]Open http://{host}:{port} in your browser[/dim]")
+        console.print()
+        start_dashboard_server(host=host, port=port, reload=reload)
+    else:
+        run_tui()
 
 
 @main.command()

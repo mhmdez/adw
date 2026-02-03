@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
-**Version:** 0.5.30
-**Status:** Phase 11 COMPLETE - All simplification tasks finished. Fixed Pydantic deprecation warning (ConfigDict) and pytest collection warnings. Total: 1528 tests passing. Code quality: all ruff lint checks pass.
+**Version:** 0.5.31
+**Status:** Phase 11 COMPLETE - All simplification tasks finished. P1-14 web dashboard implemented. Total: 1539 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -207,13 +207,19 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Also added `adw sessions` command to view sessions
   - **Files:** `src/adw/cli.py`
 
-- [ ] **P1-14** (STRETCH) Create web dashboard `adw dashboard --web`
+- [x] **P1-14** Create web dashboard `adw dashboard --web`
   - FastAPI server on port 3939
-  - Routes: GET /, /api/events, /api/sessions, WS /ws
-  - Simple Vue.js or vanilla JS frontend
+  - Routes: GET /, /api/stats, /api/events, /api/sessions, /api/tasks, /api/event-types, /api/events/stream (SSE)
+  - Vanilla JS frontend with dark theme (no external dependencies)
+  - Server-Sent Events (SSE) for real-time event streaming
+  - Event filtering by type, task_id, session_id, time range
+  - Session and task status views
+  - Added `list_adw_states()` helper function in `src/adw/agent/state.py`
+  - **Files:** `src/adw/dashboard/server.py`, `src/adw/dashboard/__init__.py`, `src/adw/cli.py`, `src/adw/agent/state.py`
 
 ### Tests Added
 - `tests/test_observability.py` - 55 tests covering event database, models, and queries
+- `tests/test_dashboard.py` - 26 tests covering dashboard stats, HTML, API endpoints, and list_adw_states
 
 ---
 

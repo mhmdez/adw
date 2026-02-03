@@ -73,3 +73,37 @@ class ADWState(BaseModel):
                 "timestamp": datetime.now().isoformat(),
             }
         )
+
+
+def list_adw_states(limit: int = 50) -> list[ADWState]:
+    """List all ADW states, sorted by most recently updated.
+
+    Args:
+        limit: Maximum number of states to return.
+
+    Returns:
+        List of ADWState objects sorted by updated_at descending.
+    """
+    agents_dir = Path("agents")
+    if not agents_dir.exists():
+        return []
+
+    states: list[ADWState] = []
+    for agent_dir in agents_dir.iterdir():
+        if not agent_dir.is_dir():
+            continue
+
+        state_file = agent_dir / "adw_state.json"
+        if not state_file.exists():
+            continue
+
+        try:
+            state = ADWState(**json.loads(state_file.read_text()))
+            states.append(state)
+        except Exception:
+            continue
+
+    # Sort by updated_at descending
+    states.sort(key=lambda s: s.updated_at, reverse=True)
+
+    return states[:limit]
