@@ -1723,6 +1723,226 @@ def slack_notify(adw_id: str, event: str, error: str | None, pr_url: str | None)
         console.print("[dim]Task may not have been created via Slack[/dim]")
 
 
+# ============== Linear Integration Commands ==============
+
+
+@main.group()
+def linear() -> None:
+    """Linear integration commands.
+
+    Poll Linear for issues and automatically process them.
+    Enables bidirectional sync between Linear and ADW.
+
+    \\b
+    Configuration (environment variables):
+        LINEAR_API_KEY      Linear API key (required)
+        LINEAR_TEAM_ID      Team ID to poll (optional)
+
+    Or use ~/.adw/config.toml:
+        [linear]
+        api_key = "lin_api_..."
+        team_id = "abc123..."  # Optional
+
+    \\b
+    Labels for workflow/model selection:
+        workflow:sdlc, workflow:simple   - Select workflow
+        model:opus, model:haiku          - Select model
+        Or use direct labels: sdlc, opus, etc.
+    """
+    pass
+
+
+@linear.command("watch")
+@click.option(
+    "--interval",
+    "-i",
+    type=int,
+    default=60,
+    help="Seconds between polls (default: 60)",
+)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+@click.option(
+    "--team-id",
+    "-t",
+    default=None,
+    help="Override team ID from config",
+)
+def linear_watch(interval: int, dry_run: bool, team_id: str | None) -> None:
+    """Watch Linear for issues.
+
+    Continuously polls Linear for issues in specified states and
+    spawns agents to work on them.
+
+    \\b
+    Examples:
+        adw linear watch                    # Watch with default config
+        adw linear watch -i 120             # Poll every 2 minutes
+        adw linear watch --dry-run          # See what would run
+        adw linear watch -t abc123          # Watch specific team
+
+    Press Ctrl+C to stop watching.
+    """
+    from .integrations.linear import LinearConfig, run_linear_watcher
+
+    # Load config
+    config = LinearConfig.load()
+
+    if not config:
+        console.print("[red]Linear not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export LINEAR_API_KEY=lin_api_...")
+        console.print("  export LINEAR_TEAM_ID=...  # optional")
+        console.print()
+        console.print("[dim]Or add to ~/.adw/config.toml:[/dim]")
+        console.print("  [linear]")
+        console.print('  api_key = "lin_api_..."')
+        console.print('  team_id = "..."  # optional')
+        raise SystemExit(1)
+
+    # Apply overrides
+    if interval:
+        config.poll_interval = interval
+    if team_id:
+        config.team_id = team_id
+
+    console.print("[bold cyan]Starting Linear issue watcher[/bold cyan]")
+    console.print()
+    if config.team_id:
+        console.print(f"[dim]Team: {config.team_id[:8]}...[/dim]")
+    else:
+        console.print("[dim]Team: auto-detect[/dim]")
+    console.print(f"[dim]Poll interval: {config.poll_interval}s[/dim]")
+    console.print(f"[dim]Filter states: {', '.join(config.filter_states)}[/dim]")
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+    console.print()
+    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
+    console.print()
+
+    try:
+        run_linear_watcher(config, dry_run=dry_run)
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Watcher stopped by user[/yellow]")
+
+
+@linear.command("test")
+def linear_test() -> None:
+    """Test Linear connection and configuration.
+
+    Verifies that the API key is valid and shows accessible teams.
+
+    \\b
+    Examples:
+        adw linear test
+    """
+    from .integrations.linear import LinearConfig, test_linear_connection
+
+    config = LinearConfig.load()
+
+    if not config:
+        console.print("[red]Linear not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export LINEAR_API_KEY=lin_api_...")
+        raise SystemExit(1)
+
+    console.print("[bold cyan]Testing Linear connection...[/bold cyan]")
+    console.print()
+
+    success = test_linear_connection(config)
+
+    if not success:
+        console.print("[red]✗ Connection failed[/red]")
+        console.print("[dim]Check your API key[/dim]")
+        raise SystemExit(1)
+
+
+@linear.command("process")
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+def linear_process(dry_run: bool) -> None:
+    """Process pending issues from Linear once.
+
+    Unlike 'watch', this runs once and exits. Useful for cron jobs
+    or manual triggering.
+
+    \\b
+    Examples:
+        adw linear process              # Process all pending issues
+        adw linear process --dry-run    # See what would run
+    """
+    from .integrations.linear import LinearConfig, process_linear_issues
+
+    config = LinearConfig.load()
+
+    if not config:
+        console.print("[red]Linear not configured[/red]")
+        raise SystemExit(1)
+
+    console.print("[bold cyan]Processing Linear issues...[/bold cyan]")
+    console.print()
+
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+        console.print()
+
+    count = process_linear_issues(config, dry_run=dry_run)
+
+    console.print()
+    console.print(f"[bold]Processed {count} issue(s)[/bold]")
+
+
+@linear.command("sync")
+@click.argument("issue_identifier")
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would happen without executing",
+)
+def linear_sync(issue_identifier: str, dry_run: bool) -> None:
+    """Sync a specific Linear issue.
+
+    Process a single issue by its identifier (e.g., TEAM-123).
+    Useful for manually triggering work on a specific issue.
+
+    \\b
+    Examples:
+        adw linear sync TEAM-123           # Process issue TEAM-123
+        adw linear sync ENG-42 --dry-run   # Preview without executing
+    """
+    from .integrations.linear import LinearConfig, sync_linear_issue
+
+    config = LinearConfig.load()
+
+    if not config:
+        console.print("[red]Linear not configured[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[bold cyan]Syncing issue: {issue_identifier}[/bold cyan]")
+    console.print()
+
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+        console.print()
+
+    success = sync_linear_issue(config, issue_identifier, dry_run=dry_run)
+
+    if not success:
+        raise SystemExit(1)
+
+
 # ============== PR Linking Commands (Multi-Repo) ==============
 
 
