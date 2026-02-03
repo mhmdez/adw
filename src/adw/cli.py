@@ -48,15 +48,24 @@ def check_for_update_notice() -> None:
 
 @click.group(invoke_without_command=True)
 @click.option("--version", "-v", is_flag=True, help="Show version and exit")
+@click.option("--debug", "-d", is_flag=True, help="Enable debug mode with verbose error output")
 @click.option("--no-update-check", is_flag=True, help="Skip update check", hidden=True)
 @click.pass_context
-def main(ctx: click.Context, version: bool, no_update_check: bool) -> None:
+def main(ctx: click.Context, version: bool, debug: bool, no_update_check: bool) -> None:
     """ADW - AI Developer Workflow CLI.
 
     Orchestrate Claude Code for any project.
 
     Run without arguments to open the interactive dashboard.
+
+    Use --debug for verbose error output with stack traces.
     """
+    # Set debug mode globally
+    if debug:
+        from .utils.errors import set_debug_mode
+
+        set_debug_mode(True)
+
     if version:
         console.print(f"adw version {__version__}")
         return
@@ -251,8 +260,10 @@ def new(description: tuple[str, ...]) -> None:
     try:
         subprocess.run(["claude", f"/discuss {desc_str}"], check=False)
     except FileNotFoundError:
-        console.print("[red]Error: 'claude' command not found.[/red]")
-        console.print("Is Claude Code installed? Visit: https://claude.ai/code")
+        from .utils.errors import error_dependency_missing, format_error
+
+        error = error_dependency_missing("claude")
+        format_error(error, console)
 
 
 @main.command()
@@ -370,7 +381,10 @@ def verify(task_id: str | None) -> None:
     try:
         subprocess.run(["claude", f"/verify {task_id}"], check=False)
     except FileNotFoundError:
-        console.print("[red]Error: 'claude' command not found.[/red]")
+        from .utils.errors import error_dependency_missing, format_error
+
+        error = error_dependency_missing("claude")
+        format_error(error, console)
 
 
 @main.command()
@@ -408,7 +422,10 @@ def approve(spec_name: str | None) -> None:
     try:
         subprocess.run(["claude", f"/approve_spec {spec_name}"], check=False)
     except FileNotFoundError:
-        console.print("[red]Error: 'claude' command not found.[/red]")
+        from .utils.errors import error_dependency_missing, format_error
+
+        error = error_dependency_missing("claude")
+        format_error(error, console)
 
 
 @main.command()
@@ -2693,8 +2710,13 @@ def webhook_start(host: str, port: int, reload: bool) -> None:
 
         start_webhook_server(host=host, port=port, reload=reload)
     except ImportError:
-        console.print("[red]Error: fastapi and uvicorn are required[/red]")
-        console.print("[dim]Install with: pip install fastapi uvicorn[/dim]")
+        from .utils.errors import error_dependency_missing, format_error
+
+        error = error_dependency_missing(
+            "fastapi and uvicorn",
+            install_cmd="pip install fastapi uvicorn",
+        )
+        format_error(error, console)
     except KeyboardInterrupt:
         console.print()
         console.print("[yellow]Server stopped[/yellow]")
@@ -5693,7 +5715,14 @@ def workflow_use(name: str) -> None:
         set_active_workflow(name)
         console.print(f"[green]✓ Active workflow set to: {name}[/green]")
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        from .utils.errors import ErrorCategory, ErrorInfo, format_error
+
+        error = ErrorInfo(
+            message=str(e),
+            category=ErrorCategory.WORKFLOW,
+            suggestion="Run 'adw workflow list' to see available workflows",
+        )
+        format_error(error, console)
 
 
 @workflow.command("create")
@@ -5802,7 +5831,15 @@ def workflow_delete(name: str, yes: bool) -> None:
         else:
             console.print(f"[yellow]Workflow not found: {name}[/yellow]")
     except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
+        from .utils.errors import ErrorCategory, ErrorInfo, format_error
+
+        error = ErrorInfo(
+            message=str(e),
+            category=ErrorCategory.WORKFLOW,
+            suggestion="Built-in workflows cannot be deleted. "
+            "Use 'adw workflow list' to see which workflows are user-defined.",
+        )
+        format_error(error, console)
 
 
 @workflow.command("validate")

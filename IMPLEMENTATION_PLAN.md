@@ -5,7 +5,7 @@
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
 **Version:** 0.5.25
-**Status:** Phase 11 IN PROGRESS - P11-3 (TUI cleanup) and P11-4 (config consolidation) complete. Unified config system with CLI commands. Total: 1356 tests passing. Code quality: all ruff lint checks pass.
+**Status:** Phase 11 IN PROGRESS - P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages) complete. Unified config system with CLI commands. Error handling utilities with --debug flag. Total: 1415 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -26,7 +26,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
 | 10 - Customization | **COMPLETE** | **100%** |
-| 11 - Simplification | **IN PROGRESS** | **14%** (1/7 tasks) |
+| 11 - Simplification | **IN PROGRESS** | **43%** (3/7 tasks) |
 
 **Existing Strengths:**
 - Agent subsystem is production-ready (executor, manager, state, worktree, ports)
@@ -1373,7 +1373,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-11/simplification.md`
-**Status:** In Progress (28% - P11-3 and P11-4 complete)
+**Status:** In Progress (43% - P11-3, P11-4, P11-5 complete)
 
 ### Tasks
 
@@ -1418,10 +1418,21 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - **Files:** `src/adw/config.py`, `src/adw/cli.py`
   - **Tests:** `tests/test_config.py` - 56 tests covering all config sections
 
-- [ ] **P11-5** Improve error messages
-  - Human-friendly with suggested fixes
-  - Include documentation links
-  - Hide stack traces by default
+- [x] **P11-5** Improve error messages ✅
+  - Created `src/adw/utils/errors.py` with comprehensive error handling utilities
+  - `ErrorCategory` enum with 9 categories: config, file, network, dependency, task, git, workflow, integration, internal
+  - `ErrorInfo` dataclass with structured error data, suggestions, and docs links
+  - Factory functions: `error_file_not_found()`, `error_dependency_missing()`, `error_config_invalid()`, `error_task_not_found()`, `error_git_operation()`, `error_network()`, `error_workflow()`, `error_internal()`
+  - `classify_exception()` auto-categorizes exceptions based on type and content
+  - `format_error()` displays errors with Rich formatting (colors, suggestions, docs links)
+  - `handle_exception()` convenience function for try/except blocks
+  - Added `--debug` flag to main CLI group for verbose error output with stack traces
+  - Debug mode via `ADW_DEBUG=1` environment variable
+  - Updated 7 CLI error handlers to use new error utilities
+  - Auto-suggestions for common dependencies (claude, git, gh, qmd, fastapi)
+  - Documentation links auto-populated based on error category
+  - **Files:** `src/adw/utils/errors.py`, `src/adw/utils/__init__.py`, `src/adw/cli.py`
+  - **Tests:** `tests/test_errors.py` - 59 tests covering all error utilities
 
 - [ ] **P11-6** Improve help & discoverability
   - Better `--help` with examples
