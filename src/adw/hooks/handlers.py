@@ -35,7 +35,7 @@ class HookEvent:
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
     @classmethod
-    def from_stdin(cls, hook_type: HookType) -> "HookEvent":
+    def from_stdin(cls, hook_type: HookType) -> HookEvent:
         """Create HookEvent from stdin JSON input.
 
         Args:
@@ -186,7 +186,7 @@ def handle_pre_tool_use(event: HookEvent) -> HookResult:
             if pattern in command:
                 return HookResult(
                     success=False,
-                    message=f"Blocked potentially dangerous command",
+                    message="Blocked potentially dangerous command",
                     block=True,
                 )
 

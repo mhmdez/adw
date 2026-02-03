@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 
 from .detect import Detection, detect_project, get_project_summary, is_monorepo
-from .integrations import qmd as qmd_integration
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -29,10 +28,10 @@ IGNORE_FILES = {
 
 def is_empty_project(path: Path) -> bool:
     """Check if project is empty or near-empty.
-    
+
     Args:
         path: Project root path
-        
+
     Returns:
         True if project has no meaningful source files yet
     """
@@ -40,7 +39,7 @@ def is_empty_project(path: Path) -> bool:
         files = list(path.iterdir())
     except PermissionError:
         return True
-    
+
     meaningful = [f for f in files if f.name not in IGNORE_FILES]
     return len(meaningful) < 2
 
@@ -358,10 +357,10 @@ def init_project(
 
     # Check for empty project BEFORE creating any files
     empty_project = is_empty_project(project_path)
-    
+
     if empty_project:
         console.print("[cyan]Empty project detected — will use progressive learning template[/cyan]")
-    
+
     # Detect project type
     console.print("[dim]Detecting project type...[/dim]")
     detections = detect_project(project_path)
@@ -417,7 +416,7 @@ def init_project(
 
     # Handle CLAUDE.md
     claude_md_path = project_path / "CLAUDE.md"
-    
+
     if claude_md_path.exists() and not force:
         # Append orchestration section if not present
         existing = claude_md_path.read_text()
@@ -434,7 +433,7 @@ def init_project(
             content = EMPTY_PROJECT_TEMPLATE.format(project_name=project_path.name)
         else:
             content = generate_claude_md(detections, project_path)
-        
+
         if create_file(claude_md_path, content, force):
             result["created"].append("CLAUDE.md")
         else:
@@ -453,11 +452,11 @@ def init_project(
     try:
         from .plugins import get_plugin_manager
         manager = get_plugin_manager()
-        
+
         # Let plugins do their init (e.g., qmd will set up collections)
         console.print("[dim]Running plugin initialization...[/dim]")
         manager.dispatch_init(project_path)
-        
+
         # Check if qmd plugin did anything
         qmd_plugin = manager.get("qmd")
         if qmd_plugin and qmd_plugin.enabled:
@@ -484,22 +483,22 @@ ADW_GITIGNORE_MARKER = "# ADW - AI Developer Workflow"
 
 def update_gitignore(project_path: Path) -> str | None:
     """Update .gitignore with ADW entries.
-    
+
     Args:
         project_path: Path to project root.
-        
+
     Returns:
         "created", "updated", "skipped", or None if no .gitignore exists
     """
     gitignore_path = project_path / ".gitignore"
-    
+
     if gitignore_path.exists():
         content = gitignore_path.read_text()
-        
+
         # Already has ADW section
         if ADW_GITIGNORE_MARKER in content:
             return "skipped"
-        
+
         # Append ADW section
         new_content = content.rstrip() + "\n" + ADW_GITIGNORE_BLOCK
         gitignore_path.write_text(new_content)

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from textual.widgets import Static
-from textual.containers import Vertical
-from textual.app import ComposeResult
 from rich.text import Text
-from rich.panel import Panel
+from textual.widgets import Static
 
 from ..state import TaskState
 

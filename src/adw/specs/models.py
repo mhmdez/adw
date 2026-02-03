@@ -1,9 +1,10 @@
 """Spec data models."""
 
-from enum import Enum
-from pydantic import BaseModel
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
+
+from pydantic import BaseModel
 
 
 class SpecStatus(str, Enum):

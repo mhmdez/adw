@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import os
 from typing import Any
 
@@ -14,7 +13,7 @@ from typing import Any
 
 def create_webhook_app():
     """Create FastAPI app for webhook handling."""
-    from fastapi import FastAPI, Request, HTTPException
+    from fastapi import FastAPI, HTTPException, Request
 
     app = FastAPI(title="ADW Webhook Handler")
 
@@ -54,7 +53,7 @@ def handle_github_event(event_type: str, payload: dict[str, Any]) -> dict:
     Returns:
         Response dict.
     """
-    from ..agent.executor import generate_adw_id
+    from ..agent.utils import generate_adw_id
 
     if event_type == "issues":
         action = payload.get("action")

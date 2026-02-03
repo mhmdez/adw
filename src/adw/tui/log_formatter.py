@@ -6,7 +6,6 @@ from rich.text import Text
 
 from .log_watcher import LogEvent
 
-
 ICONS = {
     "assistant": "💬",
     "tool": "🔧",

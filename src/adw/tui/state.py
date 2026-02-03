@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable
-from pathlib import Path
 from enum import Enum
-import re
+from pathlib import Path
 
 from ..agent.models import TaskStatus as AgentTaskStatus
-from ..tasks import load_tasks as load_tasks_cli, TaskStatus as CLITaskStatus
+from ..tasks import TaskStatus as CLITaskStatus
+from ..tasks import load_tasks as load_tasks_cli
 
 
 class BlockedReason(str, Enum):
@@ -35,7 +36,7 @@ class TaskState:
     pid: int | None = None
     started_at: datetime | None = None
     last_activity: str | None = None
-    
+
     # Blocked fields
     blocked_reason: BlockedReason | None = None
     blocked_message: str | None = None
@@ -174,7 +175,7 @@ class AppState:
             return False
 
         content = tasks_file.read_text()
-        
+
         # Pattern to match task line
         pattern = re.compile(
             rf'\[([🟢🟡⚪]), ({adw_id})\]\s+(.+?)(?=\n\[|$)',

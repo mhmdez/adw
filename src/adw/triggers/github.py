@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from rich.console import Console
 
-from ..agent.executor import generate_adw_id
-from ..agent.task_updater import mark_in_progress
-from ..integrations.github import get_open_issues_with_label, add_issue_comment
+from ..agent.utils import generate_adw_id
+from ..integrations.github import add_issue_comment, get_open_issues_with_label
 from ..workflows.standard import run_standard_workflow
-
 
 console = Console()
 
@@ -92,7 +89,7 @@ def run_github_cron(
         interval: Seconds between checks.
         dry_run: If True, don't actually process.
     """
-    console.print(f"[bold]Starting GitHub issue monitor[/bold]")
+    console.print("[bold]Starting GitHub issue monitor[/bold]")
     console.print(f"Label: {label}")
     console.print(f"Interval: {interval}s")
 

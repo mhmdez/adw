@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .app import ADWApp
@@ -18,7 +19,7 @@ class SlashCommand:
     usage: str | None = None
 
 
-def handle_help(app: "ADWApp", args: list[str]) -> None:
+def handle_help(app: ADWApp, args: list[str]) -> None:
     """Show command help."""
     lines = ["Available commands:"]
     for cmd in TUI_COMMANDS:
@@ -37,7 +38,7 @@ def handle_help(app: "ADWApp", args: list[str]) -> None:
     app.notify("\n".join(lines), timeout=10)
 
 
-def handle_status(app: "ADWApp", args: list[str]) -> None:
+def handle_status(app: ADWApp, args: list[str]) -> None:
     """Show system status summary."""
     state = app.state
     total = len(state.tasks)
@@ -58,7 +59,7 @@ def handle_status(app: "ADWApp", args: list[str]) -> None:
     app.notify("\n".join(status_lines), timeout=5)
 
 
-def handle_spawn(app: "ADWApp", args: list[str]) -> None:
+def handle_spawn(app: ADWApp, args: list[str]) -> None:
     """Spawn agent for selected or specified task."""
     if args:
         task_id = args[0]
@@ -80,7 +81,7 @@ def handle_spawn(app: "ADWApp", args: list[str]) -> None:
         app.notify("No task selected. Use /spawn <task_id> or select a task first.", severity="warning")
 
 
-def handle_kill(app: "ADWApp", args: list[str]) -> None:
+def handle_kill(app: ADWApp, args: list[str]) -> None:
     """Kill running agent."""
     if args:
         adw_id = args[0]
@@ -102,7 +103,7 @@ def handle_kill(app: "ADWApp", args: list[str]) -> None:
         app.notify("No running task selected. Use /kill <adw_id> or select a running task.", severity="warning")
 
 
-def handle_logs(app: "ADWApp", args: list[str]) -> None:
+def handle_logs(app: ADWApp, args: list[str]) -> None:
     """Filter logs to specific agent."""
     from .widgets.log_viewer import LogViewer
 
@@ -128,7 +129,7 @@ def handle_logs(app: "ADWApp", args: list[str]) -> None:
             app.notify("No task selected for log filtering")
 
 
-def handle_clear(app: "ADWApp", args: list[str]) -> None:
+def handle_clear(app: ADWApp, args: list[str]) -> None:
     """Clear log view."""
     from .widgets.log_viewer import LogViewer
 
@@ -137,18 +138,18 @@ def handle_clear(app: "ADWApp", args: list[str]) -> None:
     app.notify("Logs cleared")
 
 
-def handle_refresh(app: "ADWApp", args: list[str]) -> None:
+def handle_refresh(app: ADWApp, args: list[str]) -> None:
     """Refresh task list."""
     app.state.load_from_tasks_md()
     app.notify("Tasks refreshed")
 
 
-def handle_message(app: "ADWApp", args: list[str]) -> None:
+def handle_message(app: ADWApp, args: list[str]) -> None:
     """Send message to agent."""
     if len(args) < 2:
         if app.state.selected_task and app.state.selected_task.is_running and len(args) == 1:
             # Single arg is the message, send to selected task
-            from ..protocol.messages import write_message, MessagePriority
+            from ..protocol.messages import MessagePriority, write_message
             write_message(
                 adw_id=app.state.selected_task.adw_id,
                 message=args[0],
@@ -162,15 +163,15 @@ def handle_message(app: "ADWApp", args: list[str]) -> None:
     adw_id = args[0]
     message = " ".join(args[1:])
 
-    from ..protocol.messages import write_message, MessagePriority
+    from ..protocol.messages import MessagePriority, write_message
     write_message(adw_id=adw_id, message=message, priority=MessagePriority.NORMAL)
     app.notify(f"Message sent to {adw_id[:8]}")
 
 
-def handle_update(app: "ADWApp", args: list[str]) -> None:
+def handle_update(app: ADWApp, args: list[str]) -> None:
     """Check for and install updates."""
-    from ..update import check_for_update, run_update
     from .. import __version__
+    from ..update import check_for_update, run_update
 
     app.notify(f"Current version: {__version__}. Checking for updates...")
 
@@ -194,7 +195,7 @@ def handle_update(app: "ADWApp", args: list[str]) -> None:
         app.notify("Update failed. Try: uv tool upgrade adw", severity="error")
 
 
-def handle_version(app: "ADWApp", args: list[str]) -> None:
+def handle_version(app: ADWApp, args: list[str]) -> None:
     """Show version information."""
     from .. import __version__
     app.notify(f"ADW version {__version__}")
@@ -235,7 +236,7 @@ def parse_command(text: str) -> tuple[str, list[str]] | None:
     return parts[0].lower(), parts[1:]
 
 
-def execute_command(app: "ADWApp", text: str) -> bool:
+def execute_command(app: ADWApp, text: str) -> bool:
     """Execute a slash command.
 
     Args:

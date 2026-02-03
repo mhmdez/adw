@@ -1,18 +1,13 @@
 """Animated widgets for a beautiful TUI."""
 
-from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Static
-from textual.reactive import reactive
-from rich.text import Text
-from rich.panel import Panel
-from rich.align import Align
 import random
 
-from ..branding import (
-    LOGO, TAGLINE, COLORS, SPINNERS, GRADIENT,
-    get_loading_message, get_spinner, gradient_text
-)
+from rich.align import Align
+from rich.text import Text
+from textual.reactive import reactive
+from textual.widgets import Static
+
+from ..branding import COLORS, GRADIENT, LOGO, TAGLINE, get_spinner
 
 
 class AnimatedLogo(Static):
@@ -45,12 +40,12 @@ class AnimatedLogo(Static):
     def _render(self) -> None:
         lines = LOGO.strip().split("\n")
         text = Text()
-        
+
         for i, line in enumerate(lines):
             color_idx = (i + self.frame) % len(self._colors)
             color = self._colors[color_idx]
             text.append(line + "\n", style=color)
-        
+
         text.append(f"\n{TAGLINE}", style=f"bold {COLORS['muted']}")
         self.update(Align.center(text))
 
@@ -250,7 +245,7 @@ class ParticleField(Static):
         # Shift particles
         for row in self._field:
             row.insert(0, row.pop())
-        
+
         # Randomly add/remove particles
         for y, row in enumerate(self._field):
             for x in range(len(row)):
@@ -259,7 +254,7 @@ class ParticleField(Static):
                         row[x] = random.choice(self.PARTICLES)
                     else:
                         row[x] = " "
-        
+
         self._render()
 
     def _render(self) -> None:

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
-from watchfiles import awatch, Change
+from watchfiles import Change, awatch
 
 from ..protocol.messages import AgentQuestion
 
@@ -98,7 +98,7 @@ class LogWatcher:
         try:
             # Start watcher
             watcher = awatch(self.agents_dir)
-            
+
             while self._running:
                 # Check for file changes with timeout to allow polling questions
                 try:
@@ -123,7 +123,7 @@ class LogWatcher:
                             # Read new content
                             if change_type in (Change.added, Change.modified):
                                 await self._handle_file_change(adw_id, path)
-                        
+
                         # Break inner loop to poll questions
                         break
                 except Exception:
@@ -137,7 +137,7 @@ class LogWatcher:
 
                 await asyncio.sleep(0.5)
 
-        except Exception as e:
+        except Exception:
             # Log but don't crash
             pass
 
@@ -155,7 +155,7 @@ class LogWatcher:
         last_pos = self._file_positions.get(path_key, 0)
 
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 f.seek(last_pos)
                 new_content = f.read()
                 self._file_positions[path_key] = f.tell()
@@ -182,7 +182,7 @@ class LogWatcher:
         # We need to read the whole file or cache answers
         # For simplicity/robustness, reading file is safer but less efficient
         # Optimized: check recent messages or cache in memory
-        
+
         answers_file = self.agents_dir / adw_id / "adw_messages.jsonl"
         if not answers_file.exists():
             return False
@@ -213,7 +213,7 @@ class LogWatcher:
         last_pos = self._file_positions.get(path_key, 0)
 
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 f.seek(last_pos)
                 new_content = f.read()
                 self._file_positions[path_key] = f.tell()

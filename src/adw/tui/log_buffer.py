@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections import deque
+
 from rich.text import Text
 
-from .log_watcher import LogEvent
 from .log_formatter import format_event
+from .log_watcher import LogEvent
 
 
 class LogBuffer:

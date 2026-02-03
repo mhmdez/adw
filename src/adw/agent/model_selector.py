@@ -8,8 +8,8 @@ This module provides intelligent model selection based on:
 """
 
 from __future__ import annotations
-from typing import Literal
 
+from typing import Literal
 
 # Model selection based on slash command and model set
 SLASH_COMMAND_MODEL_MAP: dict[str, dict[str, str]] = {

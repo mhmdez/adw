@@ -18,7 +18,6 @@ from . import __version__
 from .commands.completion import STATUS_CHOICES, TASK_ID, setup_completion
 from .commands.monitor_commands import view_logs, watch_daemon
 from .commands.task_commands import add_task, cancel_task, list_tasks, retry_task
-from .dashboard import run_dashboard
 from .detect import detect_project, get_project_summary, is_monorepo
 from .init import init_project, print_init_summary
 from .specs import get_pending_specs, load_all_specs
@@ -36,8 +35,11 @@ def check_for_update_notice() -> None:
         current, latest = check_for_update()
         if latest and latest > current:
             console.print()
-            console.print(f"[yellow]⚡ Update available:[/yellow] [dim]{current}[/dim] → [bold cyan]{latest}[/bold cyan]")
-            console.print(f"[dim]   Run [/dim][cyan]adw update[/cyan][dim] to upgrade[/dim]")
+            console.print(
+                f"[yellow]⚡ Update available:[/yellow] [dim]{current}[/dim] → "
+                f"[bold cyan]{latest}[/bold cyan]"
+            )
+            console.print("[dim]   Run [/dim][cyan]adw update[/cyan][dim] to upgrade[/dim]")
             console.print()
     except Exception:
         # Silently ignore update check errors
@@ -107,20 +109,20 @@ def init(force: bool, smart: bool, quick: bool, qmd: bool | None, path: Path | N
             generate_architecture_md,
             generate_claude_md_from_analysis,
         )
-        
+
         console.print("[dim]🔍 Analyzing project with Claude Code...[/dim]")
         console.print("[dim]   This may take 30-60 seconds[/dim]")
         console.print()
-        
+
         with console.status("[cyan]Analyzing...[/cyan]"):
             analysis = analyze_project(project_path, verbose=True)
-        
+
         if analysis:
             console.print(f"[green]✓ Detected: {analysis.name}[/green]")
             console.print(f"[dim]  Stack: {', '.join(analysis.stack)}[/dim]")
             console.print(f"[dim]  {len(analysis.structure)} folders, {len(analysis.key_files)} key files[/dim]")
             console.print()
-            
+
             # Generate docs from analysis
             claude_md = generate_claude_md_from_analysis(
                 analysis.__dict__, project_path
@@ -128,19 +130,19 @@ def init(force: bool, smart: bool, quick: bool, qmd: bool | None, path: Path | N
             architecture_md = generate_architecture_md(
                 analysis.__dict__, project_path
             )
-            
+
             # Write generated files
             claude_path = project_path / "CLAUDE.md"
             arch_path = project_path / "ARCHITECTURE.md"
-            
+
             if force or not claude_path.exists():
                 claude_path.write_text(claude_md)
                 console.print("[green]✓ Generated CLAUDE.md[/green]")
-            
+
             if force or not arch_path.exists():
                 arch_path.write_text(architecture_md)
                 console.print("[green]✓ Generated ARCHITECTURE.md[/green]")
-            
+
             console.print()
         else:
             console.print("[yellow]⚠ Analysis failed, falling back to detection[/yellow]")
@@ -170,31 +172,31 @@ def refresh(full: bool, path: Path | None) -> None:
         generate_claude_md_from_analysis,
     )
     from .detect import detect_project, get_project_summary
-    
+
     project_path = path or Path.cwd()
     claude_md_path = project_path / "CLAUDE.md"
-    
+
     console.print(f"[bold cyan]Refreshing context for {project_path.name}[/bold cyan]")
     console.print()
-    
+
     if full:
         # Deep analysis with Claude Code
         console.print("[dim]🔍 Running deep analysis with Claude Code...[/dim]")
-        
+
         with console.status("[cyan]Analyzing...[/cyan]"):
             analysis = analyze_project(project_path, verbose=True)
-        
+
         if analysis:
-            console.print(f"[green]✓ Analysis complete[/green]")
+            console.print("[green]✓ Analysis complete[/green]")
             console.print(f"[dim]  Stack: {', '.join(analysis.stack)}[/dim]")
-            
+
             # Generate and write updated docs
             claude_md = generate_claude_md_from_analysis(
                 analysis.__dict__, project_path
             )
             claude_md_path.write_text(claude_md)
             console.print("[green]✓ Updated CLAUDE.md[/green]")
-            
+
             # Also update ARCHITECTURE.md
             arch_md = generate_architecture_md(analysis.__dict__, project_path)
             (project_path / "ARCHITECTURE.md").write_text(arch_md)
@@ -204,13 +206,13 @@ def refresh(full: bool, path: Path | None) -> None:
     else:
         # Quick detection refresh
         console.print("[dim]🔍 Quick detection...[/dim]")
-        
+
         detections = detect_project(project_path)
-        
+
         if detections:
             summary = get_project_summary(detections)
             console.print(f"[green]✓ Detected: {summary}[/green]")
-            
+
             # Update CLAUDE.md with new detection
             from .init import generate_claude_md
             content = generate_claude_md(detections, project_path)
@@ -218,7 +220,7 @@ def refresh(full: bool, path: Path | None) -> None:
             console.print("[green]✓ Updated CLAUDE.md[/green]")
         else:
             console.print("[yellow]No stack detected — try 'adw refresh --full' for deep analysis[/yellow]")
-    
+
     console.print()
     console.print("[dim]Tip: Run 'adw refresh --full' for comprehensive analysis[/dim]")
 
@@ -639,18 +641,18 @@ def pause_cmd() -> None:
         adw pause    # Pause task spawning
     """
     from .daemon_state import DaemonStatus, read_state, request_pause
-    
+
     state = read_state()
-    
+
     if state.status == DaemonStatus.STOPPED:
         console.print("[yellow]Daemon is not running[/yellow]")
         console.print("[dim]Start it with 'adw run'[/dim]")
         return
-    
+
     if state.status == DaemonStatus.PAUSED:
         console.print("[yellow]Daemon is already paused[/yellow]")
         return
-    
+
     if request_pause():
         console.print("[green]⏸️  Daemon paused[/green]")
         console.print("[dim]Running tasks will continue. No new tasks will start.[/dim]")
@@ -670,18 +672,18 @@ def resume_cmd() -> None:
         adw resume    # Resume task spawning
     """
     from .daemon_state import DaemonStatus, read_state, request_resume
-    
+
     state = read_state()
-    
+
     if state.status == DaemonStatus.STOPPED:
         console.print("[yellow]Daemon is not running[/yellow]")
         console.print("[dim]Start it with 'adw run'[/dim]")
         return
-    
+
     if state.status == DaemonStatus.RUNNING:
         console.print("[yellow]Daemon is already running[/yellow]")
         return
-    
+
     if request_resume():
         console.print("[green]▶️  Daemon resumed[/green]")
     else:
@@ -700,9 +702,9 @@ def status_cmd() -> None:
         adw status
     """
     from .daemon_state import DaemonStatus, read_state
-    
+
     state = read_state()
-    
+
     # Status indicator
     if state.status == DaemonStatus.RUNNING:
         status_text = "[green]● Running[/green]"
@@ -710,27 +712,27 @@ def status_cmd() -> None:
         status_text = "[yellow]⏸ Paused[/yellow]"
     else:
         status_text = "[dim]○ Stopped[/dim]"
-    
+
     console.print(f"[bold]Daemon Status:[/bold] {status_text}")
-    
+
     if state.pid:
         console.print(f"[dim]PID: {state.pid}[/dim]")
-    
+
     if state.started_at:
         console.print(f"[dim]Started: {state.started_at}[/dim]")
-    
+
     if state.paused_at:
         console.print(f"[dim]Paused: {state.paused_at}[/dim]")
-    
+
     console.print()
-    
+
     # Task stats
     console.print("[bold]Tasks:[/bold]")
     console.print(f"  Running:   {len(state.running_tasks)}")
     console.print(f"  Pending:   {state.pending_count}")
     console.print(f"  Completed: {state.completed_count}")
     console.print(f"  Failed:    {state.failed_count}")
-    
+
     # Show running tasks
     if state.running_tasks:
         console.print()
@@ -759,25 +761,25 @@ def history_cmd(days: int, failed: bool, show_all: bool) -> None:
     """
     from datetime import datetime, timedelta
     from pathlib import Path
-    
+
     history_path = Path.cwd() / "history.md"
-    
+
     if not history_path.exists():
         console.print("[yellow]No history found[/yellow]")
         console.print("[dim]Complete some tasks first![/dim]")
         return
-    
+
     content = history_path.read_text()
     lines = content.split("\n")
-    
+
     # Parse history
     current_date = None
     cutoff = datetime.now() - timedelta(days=days) if not show_all else None
-    
+
     completed_count = 0
     failed_count = 0
     displayed = []
-    
+
     for line in lines:
         # Check for date header
         if line.startswith("## "):
@@ -787,40 +789,40 @@ def history_cmd(days: int, failed: bool, show_all: bool) -> None:
             except ValueError:
                 current_date = None
             continue
-        
+
         if not line.startswith("- "):
             continue
-        
+
         # Check date cutoff
         if cutoff and current_date and current_date < cutoff:
             continue
-        
+
         # Count and filter
         is_failed = "❌" in line
         is_completed = "✅" in line
-        
+
         if is_failed:
             failed_count += 1
         elif is_completed:
             completed_count += 1
-        
+
         if failed and not is_failed:
             continue
-        
+
         displayed.append((current_date, line))
-    
+
     # Display
-    console.print(f"[bold]Task History[/bold]")
+    console.print("[bold]Task History[/bold]")
     if not show_all:
         console.print(f"[dim]Last {days} days — {completed_count} completed, {failed_count} failed[/dim]")
     else:
         console.print(f"[dim]All time — {completed_count} completed, {failed_count} failed[/dim]")
     console.print()
-    
+
     if not displayed:
         console.print("[dim]No tasks found matching criteria[/dim]")
         return
-    
+
     # Group by date
     current_header = None
     for date, line in displayed:
@@ -828,7 +830,7 @@ def history_cmd(days: int, failed: bool, show_all: bool) -> None:
         if date_str != current_header:
             current_header = date_str
             console.print(f"\n[bold]{date_str}[/bold]")
-        
+
         # Format line nicely
         if "✅" in line:
             console.print(f"  [green]{line[2:]}[/green]")
@@ -928,7 +930,7 @@ def worktree_create(name: str, branch: str | None) -> None:
         console.print()
         console.print(f"[green]✓[/green] Worktree created at: {worktree_path}")
         console.print()
-        console.print(f"[dim]To work in this worktree:[/dim]")
+        console.print("[dim]To work in this worktree:[/dim]")
         console.print(f"[dim]  cd {worktree_path}[/dim]")
     else:
         console.print("[red]Failed to create worktree[/red]")
@@ -1041,7 +1043,7 @@ def github_process(issue_number: int, dry_run: bool) -> None:
         adw github process 123              # Process issue #123
         adw github process 456 --dry-run    # See details without running
     """
-    from .agent.executor import generate_adw_id
+    from .agent.utils import generate_adw_id
     from .integrations.github import add_issue_comment, get_issue
     from .workflows.standard import run_standard_workflow
 
@@ -1148,8 +1150,8 @@ def github_watch_pr(pr_number: int, interval: int, auto_fix: bool, dry_run: bool
         adw github watch-pr 123 --auto-fix   # Auto-fix comments
         adw github watch-pr 123 --dry-run    # Show without fixing
     """
-    from .github import PRReviewWatcher, CommentParser, apply_review_fixes
-    from .agent.executor import generate_adw_id
+    from .agent.utils import generate_adw_id
+    from .github import CommentParser, PRReviewWatcher, apply_review_fixes
 
     console.print(f"[bold cyan]Watching PR #{pr_number}[/bold cyan]")
     console.print()
@@ -1176,7 +1178,7 @@ def github_watch_pr(pr_number: int, interval: int, auto_fix: bool, dry_run: bool
             # Check PR status
             info = watcher.get_pr_info()
             if not info:
-                console.print(f"[red]Could not get PR info[/red]")
+                console.print("[red]Could not get PR info[/red]")
                 time.sleep(interval)
                 continue
 
@@ -1249,8 +1251,8 @@ def github_fix_comments(pr_number: int, fix_all: bool, dry_run: bool) -> None:
         adw github fix-comments 123 --all     # Fix all comments
         adw github fix-comments 123 --dry-run # Show without fixing
     """
-    from .github import get_pr_review_comments, CommentParser, apply_review_fixes
-    from .agent.executor import generate_adw_id
+    from .agent.utils import generate_adw_id
+    from .github import CommentParser, apply_review_fixes, get_pr_review_comments
 
     console.print(f"[bold cyan]Processing PR #{pr_number} review comments[/bold cyan]")
     console.print()
@@ -1341,7 +1343,11 @@ def approve_task_cmd(task_id: str) -> None:
     # Show request details
     console.print(f"[bold]Approving: {request.title}[/bold]")
     console.print()
-    console.print(f"[dim]{request.description[:200]}...[/dim]" if len(request.description) > 200 else f"[dim]{request.description}[/dim]")
+    desc = request.description
+    if len(desc) > 200:
+        console.print(f"[dim]{desc[:200]}...[/dim]")
+    else:
+        console.print(f"[dim]{desc}[/dim]")
     console.print()
 
     if not click.confirm("Approve this task?"):
@@ -1353,7 +1359,7 @@ def approve_task_cmd(task_id: str) -> None:
         console.print()
         console.print(f"[green]✓ Task {task_id} approved[/green]")
     else:
-        console.print(f"[red]Failed to approve task[/red]")
+        console.print("[red]Failed to approve task[/red]")
 
 
 @main.command("reject-task")
@@ -1375,7 +1381,7 @@ def reject_task_cmd(task_id: str, reason: str) -> None:
         adw reject-task abc12345 -r "Wrong approach"
         adw reject-task abc12345 --reason "Need more error handling"
     """
-    from .github.approval_gate import reject_task, load_approval_request
+    from .github.approval_gate import load_approval_request, reject_task
 
     request = load_approval_request(task_id)
 
@@ -1398,7 +1404,7 @@ def reject_task_cmd(task_id: str, reason: str) -> None:
         console.print(f"[yellow]✗ Task {task_id} rejected[/yellow]")
         console.print("[dim]Task will return to planning phase with feedback[/dim]")
     else:
-        console.print(f"[red]Failed to reject task[/red]")
+        console.print("[red]Failed to reject task[/red]")
 
 
 @main.command("continue-task")
@@ -1431,7 +1437,7 @@ def continue_task_cmd(task_id: str, feedback: tuple[str, ...]) -> None:
         console.print(f"[green]✓ Feedback added to task {task_id}[/green]")
         console.print(f"[dim]Total feedback items: {len(result.continue_prompts)}[/dim]")
     else:
-        console.print(f"[red]Failed to add feedback[/red]")
+        console.print("[red]Failed to add feedback[/red]")
 
 
 @main.command("pending-approvals")
@@ -1582,7 +1588,7 @@ def run(
 @main.group()
 def webhook() -> None:
     """Webhook management commands.
-    
+
     Configure webhooks to get Slack/Discord/HTTP notifications
     when tasks complete or fail.
     """
@@ -1600,23 +1606,23 @@ def webhook() -> None:
 )
 def webhook_test(url: str, event: str) -> None:
     """Test a webhook URL.
-    
+
     Sends a test event to verify your webhook is working.
-    
+
     \b
     Examples:
         adw webhook test https://hooks.slack.com/services/...
         adw webhook test https://discord.com/api/webhooks/... -e failed
     """
     from .webhooks import WebhookConfig, detect_webhook_type, send_webhook
-    
+
     webhook_type = detect_webhook_type(url)
     config = WebhookConfig(
         url=url,
         type=webhook_type,
         events=["task_started", "task_completed", "task_failed"],
     )
-    
+
     event_name = f"task_{event}"
     test_data = {
         "adw_id": "test1234",
@@ -1624,30 +1630,30 @@ def webhook_test(url: str, event: str) -> None:
         "error": "Simulated failure" if event == "failed" else None,
         "return_code": 1 if event == "failed" else 0,
     }
-    
+
     console.print(f"[dim]Detected type: {webhook_type.value}[/dim]")
     console.print(f"[dim]Sending {event_name} event...[/dim]")
-    
+
     success = send_webhook(config, event_name, test_data)
-    
+
     if success:
-        console.print(f"[green]✓ Webhook sent successfully[/green]")
+        console.print("[green]✓ Webhook sent successfully[/green]")
     else:
-        console.print(f"[red]✗ Failed to send webhook[/red]")
+        console.print("[red]✗ Failed to send webhook[/red]")
         console.print("[dim]Check the URL and try again[/dim]")
 
 
 @webhook.command("show")
 def webhook_show() -> None:
     """Show current webhook configuration.
-    
+
     Displays webhook URL from environment variable (ADW_WEBHOOK_URL).
     """
     import os
-    
+
     url = os.environ.get("ADW_WEBHOOK_URL")
     events = os.environ.get("ADW_WEBHOOK_EVENTS", "task_completed,task_failed")
-    
+
     if not url:
         console.print("[yellow]No webhook configured[/yellow]")
         console.print()
@@ -1655,14 +1661,14 @@ def webhook_show() -> None:
         console.print("  [cyan]export ADW_WEBHOOK_URL='https://...'[/cyan]")
         console.print("  [cyan]export ADW_WEBHOOK_EVENTS='task_completed,task_failed'[/cyan]")
         return
-    
+
     from .webhooks import detect_webhook_type
-    
+
     webhook_type = detect_webhook_type(url)
-    
+
     # Mask URL for security
     masked = url[:30] + "..." if len(url) > 35 else url
-    
+
     console.print(f"[bold]URL:[/bold] {masked}")
     console.print(f"[bold]Type:[/bold] {webhook_type.value}")
     console.print(f"[bold]Events:[/bold] {events}")
@@ -1679,9 +1685,9 @@ def webhook_show() -> None:
 @click.argument("message", required=False, default="Test notification from ADW")
 def notify(sound: str, message: str) -> None:
     """Test desktop notifications.
-    
+
     Sends a test notification to verify macOS notifications are working.
-    
+
     \b
     Examples:
         adw notify                          # Default test
@@ -1689,11 +1695,11 @@ def notify(sound: str, message: str) -> None:
         adw notify -s basso "Failed!"       # With error sound
     """
     from .notifications import NotificationSound, is_macos, send_notification
-    
+
     if not is_macos():
         console.print("[red]Desktop notifications are only supported on macOS[/red]")
         return
-    
+
     sound_map = {
         "glass": NotificationSound.GLASS,
         "basso": NotificationSound.BASSO,
@@ -1702,15 +1708,15 @@ def notify(sound: str, message: str) -> None:
         "hero": NotificationSound.HERO,
         "none": NotificationSound.NONE,
     }
-    
+
     console.print(f"[dim]Sending notification: {message}[/dim]")
-    
+
     success = send_notification(
         title="🔔 ADW Notification",
         message=message,
         sound=sound_map.get(sound, NotificationSound.GLASS),
     )
-    
+
     if success:
         console.print("[green]✓ Notification sent[/green]")
     else:
@@ -1743,10 +1749,10 @@ def plugin() -> None:
 def plugin_list() -> None:
     """List installed plugins."""
     from .plugins import get_plugin_manager
-    
+
     manager = get_plugin_manager()
     plugins = manager.all
-    
+
     if not plugins:
         console.print("[yellow]No plugins installed[/yellow]")
         console.print()
@@ -1755,10 +1761,10 @@ def plugin_list() -> None:
         console.print()
         console.print("[dim]Install with: adw plugin install <name>[/dim]")
         return
-    
+
     console.print("[bold cyan]Installed Plugins:[/bold cyan]")
     console.print()
-    
+
     for p in plugins:
         status_icon = "[green]✓[/green]" if p.enabled else "[yellow]○[/yellow]"
         console.print(f"{status_icon} [bold]{p.name}[/bold] v{p.version}")
@@ -1778,13 +1784,13 @@ def plugin_install(name: str) -> None:
         adw plugin install gh:user/repo  # From GitHub
     """
     from .plugins import get_plugin_manager
-    
+
     manager = get_plugin_manager()
-    
+
     console.print(f"[dim]Installing {name}...[/dim]")
-    
+
     success, message = manager.install(name)
-    
+
     if success:
         console.print(f"[green]✓ {message}[/green]")
     else:
@@ -1796,11 +1802,11 @@ def plugin_install(name: str) -> None:
 def plugin_remove(name: str) -> None:
     """Remove a plugin."""
     from .plugins import get_plugin_manager
-    
+
     manager = get_plugin_manager()
-    
+
     success, message = manager.uninstall(name)
-    
+
     if success:
         console.print(f"[green]✓ {message}[/green]")
     else:
@@ -1812,15 +1818,15 @@ def plugin_remove(name: str) -> None:
 def plugin_status(name: str | None) -> None:
     """Show plugin status."""
     from .plugins import get_plugin_manager
-    
+
     manager = get_plugin_manager()
-    
+
     if name:
         p = manager.get(name)
         if not p:
             console.print(f"[red]Plugin '{name}' not found[/red]")
             return
-        
+
         status = p.status()
         console.print(f"[bold]{status['name']}[/bold] v{status['version']}")
         console.print()
@@ -1871,7 +1877,6 @@ def rollback_cmd(task_id: str, checkpoint: str | None, rollback_all: bool) -> No
     from .agent.task_updater import update_task_status
     from .recovery.checkpoints import (
         get_last_successful_checkpoint,
-        list_checkpoints,
         load_checkpoint,
         rollback_all_changes,
         rollback_to_checkpoint,
@@ -3041,13 +3046,15 @@ def learn_show(domain: str | None, learning_type: str | None, limit: int, as_jso
 
     # Filter by domain
     if domain:
-        learnings = [l for l in learnings if l.domain == domain or l.domain == "general"]
+        learnings = [
+            item for item in learnings if item.domain == domain or item.domain == "general"
+        ]
 
     # Filter by type
     if learning_type:
         try:
             lt = LearningType(learning_type)
-            learnings = [l for l in learnings if l.type == lt]
+            learnings = [item for item in learnings if item.type == lt]
         except ValueError:
             console.print(f"[red]Unknown learning type: {learning_type}[/red]")
             console.print("[dim]Valid types: pattern, issue, mistake, best_practice[/dim]")
@@ -3063,7 +3070,7 @@ def learn_show(domain: str | None, learning_type: str | None, limit: int, as_jso
         return
 
     if as_json:
-        output = [l.to_dict() for l in learnings]
+        output = [item.to_dict() for item in learnings]
         click.echo(json_lib.dumps(output, indent=2, default=str))
         return
 
@@ -3073,11 +3080,11 @@ def learn_show(domain: str | None, learning_type: str | None, limit: int, as_jso
 
     # Group by type
     by_type: dict[str, list] = {}
-    for l in learnings:
-        type_name = l.type.value
+    for item in learnings:
+        type_name = item.type.value
         if type_name not in by_type:
             by_type[type_name] = []
-        by_type[type_name].append(l)
+        by_type[type_name].append(item)
 
     type_icons = {
         "pattern": "✨",
@@ -3088,10 +3095,12 @@ def learn_show(domain: str | None, learning_type: str | None, limit: int, as_jso
 
     for type_name, type_learnings in by_type.items():
         icon = type_icons.get(type_name, "•")
-        console.print(f"[bold]{icon} {type_name.replace('_', ' ').title()}s ({len(type_learnings)})[/bold]")
-        for l in type_learnings:
-            domain_tag = f" [dim][{l.domain}][/dim]" if l.domain != "general" else ""
-            console.print(f"  - {l.content}{domain_tag}")
+        console.print(
+            f"[bold]{icon} {type_name.replace('_', ' ').title()}s ({len(type_learnings)})[/bold]"
+        )
+        for item in type_learnings:
+            domain_tag = f" [dim][{item.domain}][/dim]" if item.domain != "general" else ""
+            console.print(f"  - {item.content}{domain_tag}")
         console.print()
 
 
@@ -3192,7 +3201,7 @@ def learn_clear(domain: str | None) -> None:
     store = get_default_pattern_store()
 
     if domain:
-        store._learnings = [l for l in store.learnings if l.domain != domain]
+        store._learnings = [item for item in store.learnings if item.domain != domain]
         store.save()
         console.print(f"[green]✓ Cleared learnings for domain: {domain}[/green]")
     else:
@@ -3425,7 +3434,7 @@ def _register_plugin_commands():
     try:
         from .plugins import get_plugin_manager
         manager = get_plugin_manager()
-        
+
         for plugin in manager.enabled:
             for cmd in plugin.get_commands():
                 main.add_command(cmd)

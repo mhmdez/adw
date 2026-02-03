@@ -5,12 +5,15 @@ with running agents via `agents/{adw_id}/adw_messages.jsonl`.
 """
 
 from __future__ import annotations
+
 import json
 import uuid
+from collections.abc import Iterator
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 

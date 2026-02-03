@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import os
-import sys
-import subprocess
 import signal
-from dataclasses import dataclass, field
+import subprocess
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .utils import generate_adw_id
-from .models import AgentPromptRequest
-from .task_updater import mark_in_progress
 
 
 @dataclass

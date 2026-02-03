@@ -6,12 +6,10 @@ Can be subscribed to daemon/manager events.
 
 from __future__ import annotations
 
-import os
 import platform
 import subprocess
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 
 class NotificationSound(str, Enum):
@@ -56,35 +54,35 @@ def send_notification(
     subtitle: str = "",
 ) -> bool:
     """Send a macOS desktop notification.
-    
+
     Args:
         title: Notification title
         message: Main message body
         sound: Sound to play (NotificationSound or string)
         subtitle: Optional subtitle
-        
+
     Returns:
         True if notification was sent successfully
     """
     if not is_macos():
         return False
-    
+
     # Build AppleScript
     sound_name = sound.value if isinstance(sound, NotificationSound) else sound
-    
+
     script_parts = [
         f'display notification "{_escape(message)}"',
         f'with title "{_escape(title)}"',
     ]
-    
+
     if subtitle:
         script_parts.append(f'subtitle "{_escape(subtitle)}"')
-    
+
     if sound_name:
         script_parts.append(f'sound name "{sound_name}"')
-    
+
     script = " ".join(script_parts)
-    
+
     try:
         subprocess.run(
             ["osascript", "-e", script],
@@ -103,24 +101,24 @@ def _escape(text: str) -> str:
 
 class NotificationHandler:
     """Event handler for ADW notifications.
-    
+
     Subscribe this to a CronDaemon or AgentManager to get
     desktop notifications on task completion/failure.
-    
+
     Usage:
         daemon = CronDaemon(config)
         notifier = NotificationHandler()
         daemon.subscribe(notifier.on_event)
     """
-    
+
     def __init__(self, config: NotificationConfig | None = None):
         self.config = config or NotificationConfig()
-    
+
     def on_event(self, event: str, data: dict) -> None:
         """Handle daemon/manager events."""
         if not self.config.enabled or not is_macos():
             return
-        
+
         if event == "task_started" and self.config.show_on_start:
             desc = data.get("description", "Task")[:50]
             adw_id = data.get("adw_id", "")[:8]
@@ -130,7 +128,7 @@ class NotificationHandler:
                 subtitle=f"ID: {adw_id}",
                 sound=self.config.sound_started,
             )
-        
+
         elif event == "task_completed":
             desc = data.get("description", "Task")[:50]
             adw_id = data.get("adw_id", "")[:8]
@@ -140,7 +138,7 @@ class NotificationHandler:
                 subtitle=f"ID: {adw_id}",
                 sound=self.config.sound_success,
             )
-        
+
         elif event == "task_failed":
             desc = data.get("description", "Task")[:50]
             adw_id = data.get("adw_id", "")[:8]
@@ -151,7 +149,7 @@ class NotificationHandler:
                 subtitle=f"ID: {adw_id}",
                 sound=self.config.sound_failure,
             )
-        
+
         elif event == "completed":
             # AgentManager event (direct agent completion)
             adw_id = data.get("adw_id", "")[:8] if isinstance(data, dict) else ""
@@ -160,7 +158,7 @@ class NotificationHandler:
                 message=f"Agent {adw_id} finished successfully",
                 sound=self.config.sound_success,
             )
-        
+
         elif event == "failed":
             # AgentManager event
             adw_id = data.get("adw_id", "")[:8] if isinstance(data, dict) else ""

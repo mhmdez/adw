@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from textual.widgets import RichLog
-from textual.message import Message
-from rich.text import Text
 
-from ..log_watcher import LogEvent
 from ..log_buffer import LogBuffer
-from ..log_formatter import format_event
+from ..log_watcher import LogEvent
 
 
 class LogViewer(RichLog):

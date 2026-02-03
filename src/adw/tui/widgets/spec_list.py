@@ -1,9 +1,9 @@
 """Spec list widget."""
 
-from textual.app import ComposeResult
-from textual.containers import Vertical, Container
-from textual.widgets import Static
 from rich.text import Text
+from textual.app import ComposeResult
+from textual.containers import Container, Vertical
+from textual.widgets import Static
 
 from ...specs import Spec, SpecStatus
 

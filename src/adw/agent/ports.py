@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import socket
 
-
 # Port ranges for ADW instances
 BACKEND_PORT_START = 9100
 BACKEND_PORT_END = 9114

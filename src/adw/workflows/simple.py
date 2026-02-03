@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 import click
 
-from ..agent.executor import prompt_with_retry, AgentPromptRequest
-from ..agent.state import ADWState
-from ..agent.utils import generate_adw_id
-from ..agent.task_updater import mark_done, mark_failed
-from ..agent.worktree import create_worktree, get_worktree_path
-from ..agent.ports import find_available_ports, write_ports_env
 from ..agent.environment import write_env_file
+from ..agent.executor import AgentPromptRequest, prompt_with_retry
+from ..agent.ports import find_available_ports, write_ports_env
+from ..agent.state import ADWState
+from ..agent.task_updater import mark_done, mark_failed
+from ..agent.utils import generate_adw_id
+from ..agent.worktree import create_worktree
 
 
 def run_simple_workflow(

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from textual.widgets import ListView, ListItem, Static
-from textual.message import Message
 from rich.text import Text
+from textual.message import Message
+from textual.widgets import ListItem, ListView, Static
 
-from ..state import TaskState
 from ...agent.models import TaskStatus
-
+from ..state import TaskState
 
 STATUS_ICONS = {
     TaskStatus.PENDING: ("⏳", "dim"),

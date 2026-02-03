@@ -1,8 +1,8 @@
 from textual.app import ComposeResult
-from textual.containers import Container, Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Static, Input, Button
 from textual.binding import Binding
+from textual.containers import Container
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Static
 
 from ...protocol.messages import AgentQuestion
 

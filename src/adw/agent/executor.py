@@ -6,11 +6,9 @@ import json
 import os
 import subprocess
 import time
-from pathlib import Path
 
 from .models import AgentPromptRequest, AgentPromptResponse, RetryCode
-from .utils import generate_adw_id, get_output_dir
-
+from .utils import get_output_dir
 
 # Environment variables safe to pass to subprocess
 # Note: We now pass full environment to support Claude Code OAuth and other auth methods
@@ -22,7 +20,7 @@ SAFE_ENV_VARS = [
 
 def get_safe_env() -> dict[str, str]:
     """Get environment for subprocess.
-    
+
     Previously filtered to SAFE_ENV_VARS, but this broke Claude Code OAuth.
     Now passes full environment with PYTHONUNBUFFERED added.
     """

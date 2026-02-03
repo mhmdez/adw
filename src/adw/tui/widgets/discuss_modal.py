@@ -1,12 +1,13 @@
 """Discussion modal for interactive task planning."""
 
-from textual.app import ComposeResult
-from textual.containers import Container, Vertical, Horizontal
-from textual.screen import ModalScreen
-from textual.widgets import Static, Input, Button
-from textual.binding import Binding
-from rich.text import Text
 import asyncio
+
+from rich.text import Text
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Static
 
 
 class DiscussModal(ModalScreen[dict | None]):
@@ -68,12 +69,12 @@ class DiscussModal(ModalScreen[dict | None]):
         with Container(id="discuss-container"):
             yield Static("💬 Task Discussion", id="discuss-header")
             yield Static("", id="discuss-log")
-            
+
             yield Input(
                 placeholder="Type your message... (Enter to send)",
                 id="discuss-input"
             )
-            
+
             with Horizontal(id="button-row"):
                 yield Button("Send", variant="primary", id="send-btn")
                 yield Button("Generate Spec", variant="success", id="spec-btn", disabled=True)
@@ -84,7 +85,7 @@ class DiscussModal(ModalScreen[dict | None]):
         """Initialize discussion."""
         self._add_system_message(f"Starting discussion about: {self.initial_idea}")
         self._add_system_message("Discuss the task. When ready, click 'Generate Spec'.")
-        
+
         self.query_one("#discuss-input", Input).focus()
         await self._get_ai_response(f"I want to work on: {self.initial_idea}\n\nHelp me think through this.")
 
@@ -106,10 +107,10 @@ class DiscussModal(ModalScreen[dict | None]):
         """Send user message."""
         input_widget = self.query_one("#discuss-input", Input)
         message = input_widget.value.strip()
-        
+
         if not message:
             return
-        
+
         input_widget.value = ""
         self._add_user_message(message)
         asyncio.create_task(self._get_ai_response(message))
@@ -117,7 +118,7 @@ class DiscussModal(ModalScreen[dict | None]):
     async def _get_ai_response(self, user_message: str) -> None:
         """Get AI response."""
         self._add_system_message("Thinking...")
-        
+
         try:
             process = await asyncio.create_subprocess_exec(
                 "claude", "--print",
@@ -125,35 +126,35 @@ class DiscussModal(ModalScreen[dict | None]):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
-            
+
             self.messages = [m for m in self.messages if m.get("content") != "Thinking..."]
-            
+
             if process.returncode == 0 and stdout:
                 response = stdout.decode().strip()
                 self._add_ai_message(response)
                 self.query_one("#spec-btn", Button).disabled = False
             else:
                 self._add_system_message(f"Error: {stderr.decode()[:100]}")
-        
-        except asyncio.TimeoutError:
+
+        except TimeoutError:
             self._add_system_message("Response timed out")
         except Exception as e:
             self._add_system_message(f"Error: {e}")
-        
+
         self._update_log()
 
     async def _generate_spec(self) -> None:
         """Generate spec from discussion."""
         self._add_system_message("Generating spec...")
-        
+
         conversation = "\n".join([
             f"{'User' if m['role'] == 'user' else 'AI'}: {m['content']}"
             for m in self.messages
             if m['role'] in ('user', 'assistant')
         ])
-        
+
         prompt = f"""Based on this discussion, generate a task spec in markdown:
 
 {conversation}
@@ -172,29 +173,29 @@ Keep it concise."""
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=90.0)
-            
+
             if process.returncode == 0 and stdout:
                 self.spec_content = stdout.decode().strip()
                 self.spec_generated = True
-                
+
                 self._add_system_message("Spec generated! Review below:")
                 self._add_ai_message(self.spec_content)
                 self.query_one("#approve-btn", Button).disabled = False
             else:
                 self._add_system_message(f"Failed: {stderr.decode()[:100]}")
-        
+
         except Exception as e:
             self._add_system_message(f"Error: {e}")
-        
+
         self._update_log()
 
     def _approve_and_start(self) -> None:
         """Approve spec and start task."""
         if not self.spec_content:
             return
-        
+
         self.dismiss({
             "action": "approve",
             "idea": self.initial_idea,
@@ -220,7 +221,7 @@ Keep it concise."""
     def _update_log(self) -> None:
         """Update the discussion log."""
         log = self.query_one("#discuss-log", Static)
-        
+
         text = Text()
         for msg in self.messages[-15:]:
             if msg["role"] == "user":
@@ -231,5 +232,5 @@ Keep it concise."""
                 text.append(f"{msg['content']}\n\n")
             else:
                 text.append(f"[{msg['content']}]\n", style="italic dim")
-        
+
         log.update(text)

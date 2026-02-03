@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from textual.widgets import Static
 from textual.app import ComposeResult
-
+from textual.widgets import Static
 
 # ASCII art logo for ADW
 ADW_LOGO = """

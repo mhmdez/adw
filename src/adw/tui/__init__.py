@@ -1,10 +1,10 @@
 """ADW TUI module."""
 
 import subprocess
-import sys
 from pathlib import Path
 
-from .app import ADWApp, run_tui as run_textual_tui
+from .app import ADWApp
+from .app import run_tui as run_textual_tui
 
 
 def run_tui() -> None:

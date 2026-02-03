@@ -2,48 +2,45 @@
 
 from __future__ import annotations
 
-import subprocess
 import asyncio
-from pathlib import Path
-from datetime import datetime
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Static, Input, Footer, Header
-from textual.reactive import reactive
 from textual.message import Message
-from rich.text import Text
+from textual.reactive import reactive
+from textual.widgets import Input, Static
 
 
 @dataclass
 class TaskSelected(Message):
     """Message when a task is selected for viewing."""
-    task: "TaskState"
+    task: TaskState
 
 
-@dataclass  
+@dataclass
 class TaskCancel(Message):
     """Message when a task is cancelled."""
-    task: "TaskState"
+    task: TaskState
 
+from .. import __version__
+from ..agent.manager import AgentManager
+from ..agent.models import TaskStatus
+from ..agent.utils import generate_adw_id
+from ..protocol.messages import AgentQuestion, write_answer
+from ..specs import Spec, SpecLoader, SpecStatus
+from ..workflow import TaskPhase, WorkflowManager
+from .branding import COLORS, LOGO, SPINNERS, TAGLINE
+from .log_watcher import LogEvent, LogWatcher, QuestionEvent
 from .state import AppState, TaskState
-from .log_watcher import LogWatcher, LogEvent, QuestionEvent
-from .widgets.task_list import TaskList
+from .styles import APP_CSS
+from .widgets.event_stream import EventStream
 from .widgets.log_viewer import LogViewer
 from .widgets.question_modal import QuestionModal
-from .widgets.event_stream import EventStream
-from ..protocol.messages import write_answer, AgentQuestion
-from ..agent.manager import AgentManager
-from ..agent.utils import generate_adw_id
-from ..agent.models import TaskStatus
-from ..specs import SpecLoader, Spec, SpecStatus
-from ..workflow import WorkflowManager, TaskPhase
-from .. import __version__
-from .branding import COLORS, SPINNERS, LOGO, TAGLINE, get_loading_message, gradient_text
-from .styles import APP_CSS
-
 
 # Spinner frames - now using fun spinners
 SPINNER = SPINNERS["dots"]
@@ -51,7 +48,7 @@ SPINNER = SPINNERS["dots"]
 
 class TaskInbox(Vertical, can_focus=True):
     """Task inbox showing all tasks with live status.
-    
+
     Navigate with ↑↓ arrows, Enter to view logs, Tab to switch sections.
     """
 
@@ -85,16 +82,16 @@ class TaskInbox(Vertical, can_focus=True):
         height: 1;
         padding: 0 1;
     }
-    
+
     .task-item:hover {
         background: #1a1a1a;
     }
-    
+
     .task-item.-selected {
         background: #1a3a4a;
         color: #00D4FF;
     }
-    
+
     TaskInbox > #task-hint {
         height: 1;
         color: #666;
@@ -151,7 +148,7 @@ class TaskInbox(Vertical, can_focus=True):
 
     def action_pause_resume(self) -> None:
         """Pause or resume daemon."""
-        from ..daemon_state import read_state, request_pause, request_resume, DaemonStatus
+        from ..daemon_state import DaemonStatus, read_state, request_pause, request_resume
         state = read_state()
         if state.status == DaemonStatus.PAUSED:
             request_resume()
@@ -176,7 +173,7 @@ class TaskInbox(Vertical, can_focus=True):
         """Update the task list."""
         self._tasks = tasks
         self._has_running = any(t.status == TaskStatus.IN_PROGRESS for t in tasks.values())
-        
+
         # Rebuild ordered keys
         def sort_key(item):
             k, t = item
@@ -188,9 +185,9 @@ class TaskInbox(Vertical, can_focus=True):
                 TaskStatus.DONE: 4,
             }
             return (order.get(t.status, 5), k)
-        
+
         self._task_keys = [k for k, _ in sorted(tasks.items(), key=sort_key)]
-        
+
         # Ensure selected index is valid
         if self._task_keys:
             if self._selected_index >= len(self._task_keys):
@@ -199,7 +196,7 @@ class TaskInbox(Vertical, can_focus=True):
         else:
             self._selected_index = 0
             self._selected_key = None
-        
+
         self._update_display()
 
     def select_task(self, key: str | None) -> None:
@@ -464,7 +461,10 @@ class ADWApp(App):
 
     def compose(self) -> ComposeResult:
         # Beautiful header with gradient
-        header_text = f"[bold {COLORS['primary']}]⚡ ADW[/] [dim]v{__version__}[/]  [dim]│[/]  [italic {COLORS['muted']}]Ship features while you sleep[/]"
+        header_text = (
+            f"[bold {COLORS['primary']}]⚡ ADW[/] [dim]v{__version__}[/]  [dim]│[/]  "
+            f"[italic {COLORS['muted']}]Ship features while you sleep[/]"
+        )
         yield Static(header_text, id="main-header")
 
         with Horizontal(id="main-layout"):
@@ -485,11 +485,11 @@ class ADWApp(App):
 
         # Beautiful welcome with ASCII art
         detail = self.query_one(DetailPanel)
-        
+
         # Show the big ASCII logo with gradient colors
         for line in LOGO.strip().split('\n'):
             detail.add_message(f"[bold {COLORS['primary']}]{line}[/]")
-        
+
         detail.add_message("")
         detail.add_message(f"[bold {COLORS['accent']}]✨ {TAGLINE}[/]  [dim]—  Ship features while you sleep[/]")
         detail.add_message("")
@@ -521,21 +521,21 @@ class ADWApp(App):
 
         status = self.query_one(StatusLine)
         status.update_status(self.state.running_count, len(self.state.tasks))
-        
+
         # Update spec counts
         spec_pending = sum(1 for s in self._specs if s.status == SpecStatus.PENDING)
         status.update_specs(pending=spec_pending)
-        
+
         # Set attention for questions or blocked tasks
         blocked_count = sum(1 for t in self.state.tasks.values() if t.is_blocked)
         question_count = len(self._pending_questions)
-        
+
         attention_parts = []
         if question_count:
             attention_parts.append(f"❓ {question_count}")
         if blocked_count:
             attention_parts.append(f"🔴 {blocked_count} blocked")
-        
+
         if attention_parts:
             status.set_attention(" | ".join(attention_parts))
         else:
@@ -620,7 +620,7 @@ class ADWApp(App):
         """Show specs with optional status filter."""
         detail = self.query_one(DetailPanel)
         self._load_specs()
-        
+
         specs = self._specs
         if filter_arg:
             try:
@@ -628,21 +628,25 @@ class ADWApp(App):
                 specs = [s for s in specs if s.status == status]
             except ValueError:
                 specs = [s for s in specs if filter_arg.lower() in (s.phase or "").lower()]
-        
+
         if not specs:
             detail.add_message("[dim]No specs found[/dim]")
             return
-        
+
         detail.add_message("[bold]Specs:[/bold]")
         current_phase = None
         for spec in specs:
             if spec.phase != current_phase:
                 current_phase = spec.phase
                 detail.add_message(f"\n[bold dim]{current_phase or 'Unphased'}[/]")
-            
-            icon = {"draft": "📝", "pending": "⏳", "approved": "✅", "rejected": "❌", "implemented": "🎉"}.get(spec.status.value, "?")
+
+            status_icons = {
+                "draft": "📝", "pending": "⏳", "approved": "✅",
+                "rejected": "❌", "implemented": "🎉"
+            }
+            icon = status_icons.get(spec.status.value, "?")
             detail.add_message(f"  {icon} {spec.id}: {spec.title[:40]}")
-        
+
         pending = sum(1 for s in self._specs if s.status == SpecStatus.PENDING)
         approved = sum(1 for s in self._specs if s.status == SpecStatus.APPROVED)
         detail.add_message(f"\n[dim]{len(specs)} specs | {pending} pending | {approved} approved[/dim]")
@@ -653,12 +657,12 @@ class ADWApp(App):
         if not spec_id:
             detail.add_message("[red]Usage: /spec <spec-id>[/red]")
             return
-        
+
         spec = self.spec_loader.get_spec(spec_id.upper())
         if not spec:
             detail.add_message(f"[red]Spec {spec_id} not found[/red]")
             return
-        
+
         detail.add_message(f"[bold]{spec.id}: {spec.title}[/bold]")
         detail.add_message(f"Status: {spec.display_status}")
         detail.add_message(f"Phase: {spec.phase or 'None'}")
@@ -669,7 +673,7 @@ class ADWApp(App):
     def _approve_spec(self, spec_id: str) -> None:
         """Approve a spec."""
         detail = self.query_one(DetailPanel)
-        
+
         if not spec_id:
             pending = [s for s in self._specs if s.status == SpecStatus.PENDING]
             if not pending:
@@ -680,12 +684,12 @@ class ADWApp(App):
                 detail.add_message(f"  ⏳ {spec.id}: {spec.title[:40]}")
             detail.add_message("\n[dim]Use /approve <spec-id> to approve[/dim]")
             return
-        
+
         spec = self.spec_loader.get_spec(spec_id.upper())
         if not spec:
             detail.add_message(f"[red]Spec {spec_id} not found[/red]")
             return
-        
+
         if self.spec_loader.update_status(spec_id.upper(), SpecStatus.APPROVED):
             detail.add_message(f"[green]✅ Approved {spec_id}[/green]")
             self._load_specs()
@@ -696,20 +700,20 @@ class ADWApp(App):
     def _reject_spec(self, args: str) -> None:
         """Reject a spec with reason."""
         detail = self.query_one(DetailPanel)
-        
+
         parts = args.split(maxsplit=1)
         spec_id = parts[0] if parts else ""
         reason = parts[1] if len(parts) > 1 else None
-        
+
         if not spec_id:
             detail.add_message("[red]Usage: /reject <spec-id> [reason][/red]")
             return
-        
+
         spec = self.spec_loader.get_spec(spec_id.upper())
         if not spec:
             detail.add_message(f"[red]Spec {spec_id} not found[/red]")
             return
-        
+
         if self.spec_loader.update_status(spec_id.upper(), SpecStatus.REJECTED, reason):
             detail.add_message(f"[yellow]❌ Rejected {spec_id}[/yellow]")
             if reason:
@@ -723,22 +727,22 @@ class ADWApp(App):
         """Show all blocked tasks with details."""
         detail = self.query_one(DetailPanel)
         from .state import BlockedReason
-        
+
         blocked = [t for t in self.state.tasks.values() if t.is_blocked]
-        
+
         if not blocked:
             detail.add_message("[green]No blocked tasks! 🎉[/green]")
             return
-        
+
         detail.add_message(f"[bold yellow]Blocked Tasks ({len(blocked)}):[/bold yellow]")
-        
+
         by_reason: dict = {}
         for task in blocked:
             reason = task.blocked_reason or BlockedReason.MANUAL
             if reason not in by_reason:
                 by_reason[reason] = []
             by_reason[reason].append(task)
-        
+
         reason_names = {
             BlockedReason.DEPENDENCY: "⏳ Waiting on Dependencies",
             BlockedReason.APPROVAL: "👤 Needs Approval",
@@ -747,7 +751,7 @@ class ADWApp(App):
             BlockedReason.ERROR: "⚠️  Errors",
             BlockedReason.MANUAL: "🛑 Manually Blocked",
         }
-        
+
         for reason, tasks in by_reason.items():
             detail.add_message(f"\n[bold]{reason_names.get(reason, reason.value)}[/bold]")
             for task in tasks:
@@ -756,13 +760,13 @@ class ADWApp(App):
                     detail.add_message(f"    [dim]{task.blocked_message}[/dim]")
                 if task.blocked_needs:
                     detail.add_message(f"    [dim]Needs: {', '.join(task.blocked_needs)}[/dim]")
-        
+
         detail.add_message("\n[dim]Use /unblock <id> to unblock a task[/dim]")
 
     def _unblock_task(self, args: str) -> None:
         """Unblock a task."""
         detail = self.query_one(DetailPanel)
-        
+
         if not args:
             if self.state.selected_task and self.state.selected_task.is_blocked:
                 args = self.state.selected_task.adw_id
@@ -770,24 +774,24 @@ class ADWApp(App):
                 detail.add_message("[red]Usage: /unblock <task-id>[/red]")
                 detail.add_message("[dim]Or select a blocked task and run /unblock[/dim]")
                 return
-        
+
         task_id = args.strip()
-        
+
         task = self.state.tasks.get(task_id)
         if not task:
             for t in self.state.tasks.values():
                 if t.display_id == task_id or (t.adw_id and t.adw_id.startswith(task_id)):
                     task = t
                     break
-        
+
         if not task:
             detail.add_message(f"[red]Task {task_id} not found[/red]")
             return
-        
+
         if not task.is_blocked:
             detail.add_message(f"[yellow]Task {task.display_id} is not blocked[/yellow]")
             return
-        
+
         if self.state.unblock_task(task.adw_id):
             detail.add_message(f"[green]✓ Unblocked {task.display_id}[/green]")
             detail.add_message("[dim]Task moved to pending queue[/dim]")
@@ -799,25 +803,25 @@ class ADWApp(App):
         """Manually block a task."""
         detail = self.query_one(DetailPanel)
         from .state import BlockedReason
-        
+
         parts = args.split(maxsplit=1)
         if len(parts) < 2:
             detail.add_message("[red]Usage: /block <task-id> <reason>[/red]")
             return
-        
+
         task_id, reason = parts
-        
+
         task = self.state.tasks.get(task_id)
         if not task:
             for t in self.state.tasks.values():
                 if t.display_id == task_id or (t.adw_id and t.adw_id.startswith(task_id)):
                     task = t
                     break
-        
+
         if not task:
             detail.add_message(f"[red]Task {task_id} not found[/red]")
             return
-        
+
         if self.state.block_task(task.adw_id, BlockedReason.MANUAL, reason):
             detail.add_message(f"[yellow]🛑 Blocked {task.display_id}[/yellow]")
             detail.add_message(f"[dim]Reason: {reason}[/dim]")
@@ -828,13 +832,13 @@ class ADWApp(App):
     async def _start_discussion(self, idea: str) -> None:
         """Start interactive discussion for a task."""
         from .widgets.discuss_modal import DiscussModal
-        
+
         detail = self.query_one(DetailPanel)
         detail.add_message(f"[cyan]Starting discussion: {idea}[/cyan]")
-        
+
         modal = DiscussModal(idea)
         result = await self.push_screen_wait(modal)
-        
+
         if result and result.get("action") == "approve":
             await self._create_from_discussion(result)
         else:
@@ -843,22 +847,22 @@ class ADWApp(App):
     async def _create_from_discussion(self, result: dict) -> None:
         """Create task and spec from discussion result."""
         detail = self.query_one(DetailPanel)
-        
+
         adw_id = generate_adw_id()
-        
+
         # Save spec file
         spec_dir = Path("specs")
         spec_dir.mkdir(exist_ok=True)
         spec_file = spec_dir / f"{adw_id[:8]}.md"
         spec_file.write_text(result["spec"])
-        
+
         detail.add_message(f"[green]✓ Saved spec: {spec_file}[/green]")
-        
+
         # Save discussion log
         discuss_dir = Path(".adw/discussions")
         discuss_dir.mkdir(parents=True, exist_ok=True)
         discuss_file = discuss_dir / f"{adw_id}.md"
-        
+
         discussion_content = f"# Discussion: {result['idea']}\n\n"
         for msg in result["messages"]:
             if msg["role"] == "user":
@@ -866,22 +870,22 @@ class ADWApp(App):
             elif msg["role"] == "assistant":
                 discussion_content += f"**AI:** {msg['content']}\n\n"
         discuss_file.write_text(discussion_content)
-        
+
         # Create workflow
         workflow = self.workflow_manager.get_workflow(adw_id)
         workflow.spec_file = str(spec_file)
         workflow.discussion_file = str(discuss_file)
         workflow.transition_to(TaskPhase.SPEC_APPROVED, "Approved during discussion", "human")
-        
+
         # Add to tasks.md
         tasks_file = Path("tasks.md")
         content = tasks_file.read_text() if tasks_file.exists() else "# Tasks\n\n"
         content = content.rstrip() + f"\n[🟡, {adw_id}] {result['idea']}\n"
         tasks_file.write_text(content)
-        
+
         detail.add_message(f"[green]✓ Created task {adw_id[:8]}[/green]")
         detail.add_message("[cyan]Ready to implement! Use /run or /new[/cyan]")
-        
+
         self.state.load_from_tasks_md()
         self._load_specs()
         self._update_ui()
@@ -993,38 +997,38 @@ class ADWApp(App):
     def _show_help(self) -> None:
         """Show beautiful help."""
         detail = self.query_one(DetailPanel)
-        
+
         detail.add_message(f"[bold {COLORS['primary']}]⚡ ADW Commands[/]\n")
-        
+
         detail.add_message(f"[bold {COLORS['accent']}]📋 Tasks[/]")
         detail.add_message(f"  [{COLORS['primary']}]/new <desc>[/]     Create and run a task")
         detail.add_message(f"  [{COLORS['primary']}]/discuss <idea>[/] Interactive planning session")
         detail.add_message(f"  [{COLORS['primary']}]/tasks[/]          Refresh task list")
         detail.add_message(f"  [{COLORS['primary']}]/kill [id][/]      Kill running agent")
         detail.add_message("")
-        
+
         detail.add_message(f"[bold {COLORS['accent']}]📄 Specs[/]")
         detail.add_message(f"  [{COLORS['primary']}]/specs[/]          List all specs")
         detail.add_message(f"  [{COLORS['primary']}]/approve <id>[/]   Approve a spec")
         detail.add_message(f"  [{COLORS['primary']}]/reject <id>[/]    Reject a spec")
         detail.add_message("")
-        
+
         detail.add_message(f"[bold {COLORS['accent']}]🔴 Blocked[/]")
         detail.add_message(f"  [{COLORS['primary']}]/blocked[/]        Show blocked tasks")
         detail.add_message(f"  [{COLORS['primary']}]/unblock <id>[/]   Unblock a task")
         detail.add_message("")
-        
+
         detail.add_message(f"[bold {COLORS['accent']}]💬 Chat[/]")
         detail.add_message(f"  [{COLORS['primary']}]/ask <question>[/] Ask Claude anything")
         detail.add_message(f"  [{COLORS['muted']}]Just type a question ending with ?[/]")
         detail.add_message("")
-        
+
         detail.add_message(f"[bold {COLORS['accent']}]⚙️  System[/]")
         detail.add_message(f"  [{COLORS['primary']}]/init[/]           Initialize ADW in project")
         detail.add_message(f"  [{COLORS['primary']}]/run[/]            Start autonomous daemon")
         detail.add_message(f"  [{COLORS['primary']}]/status[/]         Show system status")
         detail.add_message("")
-        
+
         detail.add_message(f"[{COLORS['muted']}]⌨️  Shortcuts: n=new, r=refresh, ?=help, Ctrl+C=quit[/]")
 
     def _show_status(self) -> None:
@@ -1036,7 +1040,7 @@ class ADWApp(App):
         done = sum(1 for t in self.state.tasks.values() if t.status == TaskStatus.DONE)
         failed = sum(1 for t in self.state.tasks.values() if t.status == TaskStatus.FAILED)
 
-        detail.add_message(f"[bold]Status[/]")
+        detail.add_message("[bold]Status[/]")
         detail.add_message(f"  Version: {__version__}")
         detail.add_message(f"  Tasks: {total} total")
         detail.add_message(f"    ○ Pending: {pending}")
@@ -1072,12 +1076,16 @@ class ADWApp(App):
 
         # Spawn agent
         try:
+            prompt = (
+                f"Task ID: {adw_id}\n\nPlease complete this task:\n\n{description}\n\n"
+                "Work in the current directory. When done, summarize what you accomplished."
+            )
             self.agent_manager.spawn_prompt(
-                prompt=f"Task ID: {adw_id}\n\nPlease complete this task:\n\n{description}\n\nWork in the current directory. When done, summarize what you accomplished.",
+                prompt=prompt,
                 adw_id=adw_id,
                 model="sonnet",
             )
-            detail.add_message(f"[cyan]Agent spawned - watching logs...[/cyan]")
+            detail.add_message("[cyan]Agent spawned - watching logs...[/cyan]")
 
             # Select this task
             self.state.load_from_tasks_md()
@@ -1139,10 +1147,12 @@ class ADWApp(App):
                 if stderr:
                     detail.add_message(f"[dim]{stderr.decode()[:200]}[/dim]")
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             detail.add_message("[red]Request timed out[/red]")
         except FileNotFoundError:
-            detail.add_message("[red]Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code[/red]")
+            detail.add_message(
+                "[red]Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code[/red]"
+            )
         except Exception as e:
             detail.add_message(f"[red]Error: {e}[/red]")
 

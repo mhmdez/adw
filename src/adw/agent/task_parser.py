@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .models import Task, TaskStatus, Worktree
 
-
 # Regex patterns
 WORKTREE_PATTERN = re.compile(r"^##\s+(?:Worktree[:\s]+)?(.+)$", re.IGNORECASE)
 TASK_PATTERN = re.compile(
@@ -61,7 +60,7 @@ def parse_tasks_md(content: str) -> list[Worktree]:
                 worktrees.append(current)
             current = Worktree(name=match.group(1).strip())
             continue
-        
+
         # Also catch standard headers as context if no worktree set
         if line.startswith("#") and not match:
              # Just a structural header, we could use it as context if we wanted,

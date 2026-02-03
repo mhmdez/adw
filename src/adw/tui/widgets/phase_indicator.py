@@ -1,9 +1,9 @@
 """Phase indicator widget."""
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
-from rich.text import Text
 
 from ...workflow import TaskPhase, TaskWorkflow
 

@@ -42,7 +42,7 @@ def get_issue(issue_number: int) -> GitHubIssue | None:
             number=data["number"],
             title=data["title"],
             body=data.get("body", ""),
-            labels=[l["name"] for l in data.get("labels", [])],
+            labels=[label["name"] for label in data.get("labels", [])],
             state=data["state"],
         )
 
@@ -144,7 +144,7 @@ def get_open_issues_with_label(label: str) -> list[GitHubIssue]:
                 number=item["number"],
                 title=item["title"],
                 body=item.get("body", ""),
-                labels=[l["name"] for l in item.get("labels", [])],
+                labels=[label["name"] for label in item.get("labels", [])],
                 state=item["state"],
             )
             for item in data

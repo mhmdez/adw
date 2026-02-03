@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from textual.widgets import Static, Input
-from textual.containers import Horizontal
+
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.reactive import reactive
+from textual.widgets import Input, Static
 
 
 class StatusBar(Horizontal):

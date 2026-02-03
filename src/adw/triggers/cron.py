@@ -8,16 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import signal
-import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from ..agent.manager import AgentManager
-from ..agent.models import TaskStatus
-from ..agent.task_parser import get_eligible_tasks, load_tasks
-from ..agent.task_updater import mark_in_progress, mark_done, mark_failed
+from ..agent.task_parser import get_eligible_tasks
+from ..agent.task_updater import mark_done, mark_failed, mark_in_progress
 from ..agent.utils import generate_adw_id
 
 
@@ -38,7 +35,7 @@ class CronDaemon:
 
     Monitors tasks.md for eligible tasks and spawns agents
     to execute them within configured concurrency limits.
-    
+
     Supports pause/resume via signals:
     - SIGUSR1: Pause (stop spawning new tasks)
     - SIGUSR2: Resume (continue spawning)
@@ -205,7 +202,7 @@ class CronDaemon:
             try:
                 # Check for completed agents
                 completed = self._check_completions()
-                
+
                 # Update state manager
                 if self._state_manager:
                     for adw_id, code, _ in completed:
@@ -221,7 +218,7 @@ class CronDaemon:
                         if not task:
                             break
                         self._spawn_task(task)
-                        
+
                         # Update state manager
                         if self._state_manager:
                             self._state_manager.add_task({
@@ -241,7 +238,7 @@ class CronDaemon:
                         timeout=self.config.poll_interval,
                     )
                     break  # Shutdown requested
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass  # Normal timeout, continue polling
 
             except Exception as e:
@@ -256,16 +253,16 @@ class CronDaemon:
         self._running = True
         self._paused = False
         self._shutdown_event.clear()
-        
+
         # Initialize state manager
         from ..daemon_state import DaemonStateManager
         self._state_manager = DaemonStateManager()
         self._state_manager.start()
-        
+
         self.notify("started")
 
         await self._poll_loop()
-        
+
         # Cleanup
         if self._state_manager:
             self._state_manager.stop()
@@ -330,42 +327,42 @@ async def run_daemon(
             if stderr:
                 print(f"[cron]    stderr: {stderr}")
         elif event == "paused":
-            print(f"[cron] ⏸️  Paused - no new tasks will start")
+            print("[cron] ⏸️  Paused - no new tasks will start")
         elif event == "resumed":
-            print(f"[cron] ▶️  Resumed - continuing task execution")
+            print("[cron] ▶️  Resumed - continuing task execution")
         elif event == "error":
             print(f"[cron] ⚠️ Error: {data['error']}")
 
     daemon.subscribe(on_event)
-    
+
     # Desktop notifications (macOS)
     if notifications:
         from ..notifications import NotificationHandler
         notifier = NotificationHandler()
         daemon.subscribe(notifier.on_event)
-    
+
     # Webhooks (from environment)
     from ..webhooks import load_webhook_from_env
     webhook_handler = load_webhook_from_env()
     if webhook_handler:
         daemon.subscribe(webhook_handler.on_event)
-        print(f"[cron] 🔗 Webhook configured")
+        print("[cron] 🔗 Webhook configured")
 
     # Setup signal handlers
     loop = asyncio.get_event_loop()
 
     def signal_handler():
         daemon.stop()
-    
+
     def pause_handler():
         daemon.pause()
-    
+
     def resume_handler():
         daemon.resume()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, signal_handler)
-    
+
     # SIGUSR1 = pause, SIGUSR2 = resume
     loop.add_signal_handler(signal.SIGUSR1, pause_handler)
     loop.add_signal_handler(signal.SIGUSR2, resume_handler)

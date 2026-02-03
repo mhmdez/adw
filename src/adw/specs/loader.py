@@ -1,8 +1,9 @@
 """Spec loader and manager."""
 
 import re
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
 from .models import Spec, SpecStatus
 
 

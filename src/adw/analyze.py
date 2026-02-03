@@ -7,13 +7,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-
 
 console = Console()
 
@@ -68,11 +66,11 @@ Output ONLY valid JSON, no markdown, no explanation.'''
 
 def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
     """Run Claude Code to analyze the project.
-    
+
     Args:
         project_path: Path to project root
         timeout: Timeout in seconds
-        
+
     Returns:
         Parsed analysis dict or None on failure
     """
@@ -82,7 +80,7 @@ def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
         "--output-format", "text",
         "--dangerously-skip-permissions",
     ]
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -91,13 +89,13 @@ def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
             text=True,
             timeout=timeout,
         )
-        
+
         if result.returncode != 0:
             return None
-        
+
         # Parse JSON from output
         output = result.stdout.strip()
-        
+
         # Try to extract JSON from output
         # Sometimes Claude wraps it in markdown
         if "```json" in output:
@@ -108,9 +106,9 @@ def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
             start = output.find("```") + 3
             end = output.find("```", start)
             output = output[start:end].strip()
-        
+
         return json.loads(output)
-        
+
     except subprocess.TimeoutExpired:
         return None
     except json.JSONDecodeError:
@@ -121,11 +119,11 @@ def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
 
 def generate_claude_md_from_analysis(analysis: dict, project_path: Path) -> str:
     """Generate CLAUDE.md from analysis results.
-    
+
     Args:
         analysis: Analysis dict from Claude
         project_path: Path to project
-        
+
     Returns:
         Generated CLAUDE.md content
     """
@@ -137,7 +135,7 @@ def generate_claude_md_from_analysis(analysis: dict, project_path: Path) -> str:
     key_files = analysis.get("key_files", [])
     conventions = analysis.get("conventions", [])
     api_endpoints = analysis.get("api_endpoints", [])
-    
+
     content = f"""# CLAUDE.md
 
 This file provides guidance to Claude Code when working with this codebase.
@@ -153,36 +151,36 @@ This file provides guidance to Claude Code when working with this codebase.
 ```
 {name}/
 """
-    
+
     for folder, desc in structure.items():
         content += f"├── {folder}/  # {desc}\n"
-    
+
     content += "```\n\n"
-    
+
     if key_files:
         content += "## Key Files\n\n"
         for f in key_files:
             content += f"- `{f}`\n"
         content += "\n"
-    
+
     if commands:
         content += "## Development Commands\n\n```bash\n"
         for name, cmd in commands.items():
             content += f"# {name.capitalize()}\n{cmd}\n\n"
         content += "```\n\n"
-    
+
     if conventions:
         content += "## Conventions\n\n"
         for conv in conventions:
             content += f"- {conv}\n"
         content += "\n"
-    
+
     if api_endpoints:
         content += "## API Endpoints\n\n| Method | Path | Description |\n|--------|------|-------------|\n"
         for ep in api_endpoints:
             content += f"| {ep.get('method', '')} | {ep.get('path', '')} | {ep.get('description', '')} |\n"
         content += "\n"
-    
+
     # Add orchestration section
     content += """
 ## Multi-Agent Orchestration
@@ -205,17 +203,17 @@ This project uses ADW (AI Developer Workflow) for task orchestration.
 - `specs/` - Feature specifications
 - `.claude/commands/` - Slash commands
 """
-    
+
     return content
 
 
 def generate_architecture_md(analysis: dict, project_path: Path) -> str:
     """Generate ARCHITECTURE.md from analysis.
-    
+
     Args:
         analysis: Analysis dict from Claude
         project_path: Path to project
-        
+
     Returns:
         Generated ARCHITECTURE.md content
     """
@@ -223,7 +221,7 @@ def generate_architecture_md(analysis: dict, project_path: Path) -> str:
     description = analysis.get("description", "")
     stack = analysis.get("stack", [])
     structure = analysis.get("structure", {})
-    
+
     content = f"""# Architecture Overview
 
 ## {name}
@@ -233,15 +231,15 @@ def generate_architecture_md(analysis: dict, project_path: Path) -> str:
 ## Tech Stack
 
 """
-    
+
     for tech in stack:
         content += f"- **{tech}**\n"
-    
+
     content += "\n## Directory Structure\n\n"
-    
+
     for folder, desc in structure.items():
         content += f"### `{folder}/`\n\n{desc}\n\n"
-    
+
     content += """
 ## Data Flow
 
@@ -255,28 +253,28 @@ def generate_architecture_md(analysis: dict, project_path: Path) -> str:
 
 *This file was auto-generated by ADW. Please review and enhance.*
 """
-    
+
     return content
 
 
 def analyze_project(project_path: Path, verbose: bool = False) -> ProjectAnalysis | None:
     """Analyze a project using Claude Code.
-    
+
     Args:
         project_path: Path to project root
         verbose: Show progress
-        
+
     Returns:
         ProjectAnalysis or None on failure
     """
     if verbose:
         console.print("[dim]Running Claude Code analysis...[/dim]")
-    
+
     result = run_claude_analysis(project_path)
-    
+
     if not result:
         return None
-    
+
     return ProjectAnalysis(
         name=result.get("name", project_path.name),
         description=result.get("description", ""),
