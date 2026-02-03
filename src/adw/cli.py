@@ -1311,6 +1311,179 @@ def github_fix_comments(pr_number: int, fix_all: bool, dry_run: bool) -> None:
             console.print(f"[red]✗ Failed: {result.error_message}[/red]")
 
 
+# ============== Notion Integration Commands ==============
+
+
+@main.group()
+def notion() -> None:
+    """Notion integration commands.
+
+    Poll Notion databases for tasks and automatically process them.
+    Enables bidirectional sync between Notion and ADW.
+
+    \\b
+    Configuration (environment variables):
+        NOTION_API_KEY      Notion integration API key (required)
+        NOTION_DATABASE_ID  Database ID to poll (required)
+
+    Or use ~/.adw/config.toml:
+        [notion]
+        api_key = "secret_..."
+        database_id = "abc123..."
+    """
+    pass
+
+
+@notion.command("watch")
+@click.option(
+    "--interval",
+    "-i",
+    type=int,
+    default=60,
+    help="Seconds between polls (default: 60)",
+)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+@click.option(
+    "--database-id",
+    "-db",
+    default=None,
+    help="Override database ID from config",
+)
+def notion_watch(interval: int, dry_run: bool, database_id: str | None) -> None:
+    """Watch Notion database for tasks.
+
+    Continuously polls a Notion database for tasks in "To Do" or
+    "Not Started" status and spawns agents to work on them.
+
+    \\b
+    Examples:
+        adw notion watch                    # Watch with default config
+        adw notion watch -i 120             # Poll every 2 minutes
+        adw notion watch --dry-run          # See what would run
+
+    Press Ctrl+C to stop watching.
+    """
+    from .integrations.notion import NotionConfig, run_notion_watcher
+
+    # Load config
+    config = NotionConfig.load()
+
+    if not config:
+        console.print("[red]Notion not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export NOTION_API_KEY=secret_...")
+        console.print("  export NOTION_DATABASE_ID=...")
+        console.print()
+        console.print("[dim]Or add to ~/.adw/config.toml:[/dim]")
+        console.print("  [notion]")
+        console.print('  api_key = "secret_..."')
+        console.print('  database_id = "..."')
+        raise SystemExit(1)
+
+    # Apply overrides
+    if interval:
+        config.poll_interval = interval
+    if database_id:
+        config.database_id = database_id
+
+    console.print("[bold cyan]Starting Notion task watcher[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Database: {config.database_id[:8]}...[/dim]")
+    console.print(f"[dim]Poll interval: {config.poll_interval}s[/dim]")
+    console.print(f"[dim]Filter status: {', '.join(config.filter_status)}[/dim]")
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+    console.print()
+    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
+    console.print()
+
+    try:
+        run_notion_watcher(config, dry_run=dry_run)
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Watcher stopped by user[/yellow]")
+
+
+@notion.command("test")
+def notion_test() -> None:
+    """Test Notion connection and configuration.
+
+    Verifies that the API key is valid and the database is accessible.
+
+    \\b
+    Examples:
+        adw notion test
+    """
+    from .integrations.notion import NotionConfig, test_notion_connection
+
+    config = NotionConfig.load()
+
+    if not config:
+        console.print("[red]Notion not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export NOTION_API_KEY=secret_...")
+        console.print("  export NOTION_DATABASE_ID=...")
+        raise SystemExit(1)
+
+    console.print("[bold cyan]Testing Notion connection...[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Database: {config.database_id[:8]}...[/dim]")
+    console.print()
+
+    success = test_notion_connection(config)
+
+    if not success:
+        console.print("[red]✗ Connection failed[/red]")
+        console.print("[dim]Check your API key and database ID[/dim]")
+        raise SystemExit(1)
+
+
+@notion.command("process")
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be processed without executing",
+)
+def notion_process(dry_run: bool) -> None:
+    """Process pending tasks from Notion once.
+
+    Unlike 'watch', this runs once and exits. Useful for cron jobs
+    or manual triggering.
+
+    \\b
+    Examples:
+        adw notion process              # Process all pending tasks
+        adw notion process --dry-run    # See what would run
+    """
+    from .integrations.notion import NotionConfig, process_notion_tasks
+
+    config = NotionConfig.load()
+
+    if not config:
+        console.print("[red]Notion not configured[/red]")
+        raise SystemExit(1)
+
+    console.print("[bold cyan]Processing Notion tasks...[/bold cyan]")
+    console.print()
+
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+        console.print()
+
+    count = process_notion_tasks(config, dry_run=dry_run)
+
+    console.print()
+    console.print(f"[bold]Processed {count} task(s)[/bold]")
+
+
 # ============== PR Linking Commands (Multi-Repo) ==============
 
 
