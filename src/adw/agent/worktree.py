@@ -120,6 +120,15 @@ def create_worktree(
         if env_file.exists():
             shutil.copy(env_file, worktree_path / ".env")
 
+        # Copy .claude directory if it exists (crucial for custom commands)
+        claude_dir = Path(".claude")
+        if claude_dir.exists():
+            dest_claude = worktree_path / ".claude"
+            # Remove existing if it was checked out from git
+            if dest_claude.exists():
+                shutil.rmtree(dest_claude)
+            shutil.copytree(claude_dir, dest_claude)
+
         console.print(f"[green]Created worktree: {worktree_path}[/green]")
         return worktree_path
 
