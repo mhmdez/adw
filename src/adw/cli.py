@@ -2013,6 +2013,342 @@ def webhook_show() -> None:
     console.print(f"[bold]Events:[/bold] {events}")
 
 
+@webhook.command("start")
+@click.option(
+    "--host",
+    "-h",
+    default="0.0.0.0",
+    help="Host to bind to (default: 0.0.0.0)",
+)
+@click.option(
+    "--port",
+    "-p",
+    default=8080,
+    type=int,
+    help="Port to listen on (default: 8080)",
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="Enable auto-reload for development",
+)
+def webhook_start(host: str, port: int, reload: bool) -> None:
+    """Start the webhook server.
+
+    Starts a FastAPI server that handles:
+    - /api/tasks - Generic task creation API (requires API key)
+    - /gh-webhook - GitHub webhook events
+
+    \b
+    Examples:
+        adw webhook start                    # Start on port 8080
+        adw webhook start -p 3000            # Start on port 3000
+        adw webhook start --reload           # Development mode
+    """
+    try:
+        from .triggers.webhook import start_webhook_server
+
+        console.print(f"[bold]Starting ADW webhook server on {host}:{port}[/bold]")
+        console.print()
+        console.print("[dim]Endpoints:[/dim]")
+        console.print("  [cyan]POST /api/tasks[/cyan] - Create task (requires API key)")
+        console.print("  [cyan]GET  /api/tasks/{task_id}[/cyan] - Get task status")
+        console.print("  [cyan]POST /gh-webhook[/cyan] - GitHub webhook")
+        console.print("  [cyan]GET  /health[/cyan] - Health check")
+        console.print()
+        console.print("[dim]Press Ctrl+C to stop[/dim]")
+        console.print()
+
+        start_webhook_server(host=host, port=port, reload=reload)
+    except ImportError:
+        console.print("[red]Error: fastapi and uvicorn are required[/red]")
+        console.print("[dim]Install with: pip install fastapi uvicorn[/dim]")
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Server stopped[/yellow]")
+
+
+@webhook.command("logs")
+@click.option(
+    "--limit",
+    "-n",
+    default=20,
+    type=int,
+    help="Number of entries to show (default: 20)",
+)
+@click.option(
+    "--key-id",
+    "-k",
+    default=None,
+    help="Filter by API key ID",
+)
+@click.option(
+    "--follow",
+    "-f",
+    is_flag=True,
+    help="Follow log output (like tail -f)",
+)
+def webhook_logs(limit: int, key_id: str | None, follow: bool) -> None:
+    """View webhook activity logs.
+
+    Shows recent webhook requests and their results.
+
+    \b
+    Examples:
+        adw webhook logs              # Show last 20 entries
+        adw webhook logs -n 50        # Show last 50 entries
+        adw webhook logs -k abc123    # Filter by API key
+        adw webhook logs -f           # Follow mode
+    """
+    from .triggers.webhook import WEBHOOK_LOG_FILE, get_webhook_logs
+
+    if follow:
+        import time
+
+        console.print("[dim]Following webhook logs... (Ctrl+C to stop)[/dim]")
+        console.print()
+
+        last_count = 0
+        try:
+            while True:
+                logs = get_webhook_logs(limit=100, key_id=key_id)
+                if len(logs) > last_count:
+                    for log in logs[last_count:]:
+                        _print_webhook_log_entry(log)
+                    last_count = len(logs)
+                time.sleep(1)
+        except KeyboardInterrupt:
+            console.print()
+            return
+    else:
+        logs = get_webhook_logs(limit=limit, key_id=key_id)
+
+        if not logs:
+            console.print("[dim]No webhook logs found[/dim]")
+            console.print(f"[dim]Log file: {WEBHOOK_LOG_FILE}[/dim]")
+            return
+
+        for log in logs:
+            _print_webhook_log_entry(log)
+
+
+def _print_webhook_log_entry(log: dict) -> None:
+    """Print a single webhook log entry."""
+    timestamp = log.get("timestamp", "")[:19]  # Trim to seconds
+    event_type = log.get("event_type", "unknown")
+    source = log.get("source", "")
+    key_id = log.get("key_id", "-")
+
+    # Color based on event type
+    if "error" in event_type:
+        color = "red"
+    elif "created" in event_type:
+        color = "green"
+    else:
+        color = "cyan"
+
+    result = log.get("result", {})
+    result_str = ""
+    if "task_id" in result:
+        result_str = f" → task:{result['task_id']}"
+    elif "status" in result:
+        result_str = f" → {result['status']}"
+
+    console.print(
+        f"[dim]{timestamp}[/dim] [{color}]{event_type}[/{color}] "
+        f"[dim]{source}[/dim] [dim]key:{key_id}[/dim]{result_str}"
+    )
+
+
+# =============================================================================
+# Webhook Key Management
+# =============================================================================
+
+
+@webhook.group("key")
+def webhook_key() -> None:
+    """API key management for webhook authentication.
+
+    Generate, list, and revoke API keys for the /api/tasks endpoint.
+    """
+    pass
+
+
+@webhook_key.command("generate")
+@click.argument("name")
+@click.option(
+    "--rate-limit",
+    "-r",
+    default=100,
+    type=int,
+    help="Max requests per hour (default: 100)",
+)
+@click.option(
+    "--expires",
+    "-e",
+    default=None,
+    type=int,
+    help="Days until expiration (default: never)",
+)
+def webhook_key_generate(name: str, rate_limit: int, expires: int | None) -> None:
+    """Generate a new API key.
+
+    The generated key is shown ONCE. Store it securely!
+
+    \b
+    Examples:
+        adw webhook key generate "production"
+        adw webhook key generate "ci-cd" -r 1000
+        adw webhook key generate "temp" -e 30     # Expires in 30 days
+    """
+    from .triggers.webhook import generate_api_key
+
+    raw_key, api_key = generate_api_key(
+        name=name,
+        rate_limit=rate_limit,
+        expires_days=expires,
+    )
+
+    console.print()
+    console.print("[bold green]API Key Generated Successfully![/bold green]")
+    console.print()
+    console.print("[bold]Key ID:[/bold]", api_key.key_id)
+    console.print("[bold]Name:[/bold]", api_key.name)
+    console.print("[bold]Rate Limit:[/bold]", f"{api_key.rate_limit}/hour")
+    if api_key.expires_at:
+        console.print("[bold]Expires:[/bold]", api_key.expires_at[:10])
+    else:
+        console.print("[bold]Expires:[/bold]", "Never")
+    console.print()
+    console.print("[bold yellow]API Key (save this - shown only once!):[/bold yellow]")
+    console.print()
+    console.print(f"  [cyan]{raw_key}[/cyan]")
+    console.print()
+    console.print("[dim]Usage:[/dim]")
+    console.print('  [dim]curl -X POST http://localhost:8080/api/tasks \\[/dim]')
+    console.print(f'  [dim]  -H "Authorization: Bearer {raw_key}" \\[/dim]')
+    console.print('  [dim]  -H "Content-Type: application/json" \\[/dim]')
+    console.print('  [dim]  -d \'{"description": "My task"}\'[/dim]')
+
+
+@webhook_key.command("list")
+@click.option(
+    "--all",
+    "-a",
+    "show_all",
+    is_flag=True,
+    help="Include disabled keys",
+)
+def webhook_key_list(show_all: bool) -> None:
+    """List all API keys.
+
+    \b
+    Examples:
+        adw webhook key list          # Show active keys
+        adw webhook key list -a       # Include disabled keys
+    """
+    from .triggers.webhook import list_api_keys
+
+    keys = list_api_keys()
+
+    if not show_all:
+        keys = [k for k in keys if k.enabled]
+
+    if not keys:
+        console.print("[dim]No API keys found[/dim]")
+        console.print()
+        console.print("[dim]Generate one with:[/dim]")
+        console.print('  [cyan]adw webhook key generate "my-key"[/cyan]')
+        return
+
+    console.print()
+    console.print(f"[bold]API Keys ({len(keys)}):[/bold]")
+    console.print()
+
+    for key in keys:
+        status = "[green]active[/green]" if key.enabled else "[red]disabled[/red]"
+        expired = key.is_expired()
+        if expired:
+            status = "[red]expired[/red]"
+
+        expires = key.expires_at[:10] if key.expires_at else "never"
+        last_used = key.last_used[:10] if key.last_used else "never"
+
+        console.print(f"  [bold]{key.key_id}[/bold] - {key.name}")
+        console.print(f"    Status: {status}")
+        console.print(f"    Rate limit: {key.rate_limit}/hour")
+        console.print(f"    Expires: {expires}")
+        console.print(f"    Last used: {last_used}")
+        console.print()
+
+
+@webhook_key.command("revoke")
+@click.argument("key_id")
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+def webhook_key_revoke(key_id: str, yes: bool) -> None:
+    """Permanently revoke an API key.
+
+    This action cannot be undone.
+
+    \b
+    Examples:
+        adw webhook key revoke abc123
+        adw webhook key revoke abc123 -y    # Skip confirmation
+    """
+    from .triggers.webhook import revoke_api_key
+
+    if not yes:
+        if not click.confirm(f"Permanently revoke API key {key_id}?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    if revoke_api_key(key_id):
+        console.print(f"[green]API key {key_id} revoked successfully[/green]")
+    else:
+        console.print(f"[red]API key {key_id} not found[/red]")
+
+
+@webhook_key.command("disable")
+@click.argument("key_id")
+def webhook_key_disable(key_id: str) -> None:
+    """Disable an API key temporarily.
+
+    Disabled keys can be re-enabled later.
+
+    \b
+    Examples:
+        adw webhook key disable abc123
+    """
+    from .triggers.webhook import disable_api_key
+
+    if disable_api_key(key_id):
+        console.print(f"[green]API key {key_id} disabled[/green]")
+    else:
+        console.print(f"[red]API key {key_id} not found[/red]")
+
+
+@webhook_key.command("enable")
+@click.argument("key_id")
+def webhook_key_enable(key_id: str) -> None:
+    """Re-enable a disabled API key.
+
+    \b
+    Examples:
+        adw webhook key enable abc123
+    """
+    from .triggers.webhook import enable_api_key
+
+    if enable_api_key(key_id):
+        console.print(f"[green]API key {key_id} enabled[/green]")
+    else:
+        console.print(f"[red]API key {key_id} not found[/red]")
+
+
 @main.command()
 @click.option(
     "--sound",
