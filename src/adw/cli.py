@@ -5,6 +5,7 @@ Main entry point for the adw command.
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import sys
 from datetime import datetime
@@ -13,9 +14,10 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-import asyncio
-
 from . import __version__
+from .commands.completion import STATUS_CHOICES, TASK_ID, setup_completion
+from .commands.monitor_commands import view_logs, watch_daemon
+from .commands.task_commands import add_task, cancel_task, list_tasks, retry_task
 from .dashboard import run_dashboard
 from .detect import detect_project, get_project_summary, is_monorepo
 from .init import init_project, print_init_summary
@@ -24,9 +26,6 @@ from .tasks import TaskStatus, get_tasks_summary, load_tasks
 from .triggers.cron import run_daemon
 from .tui import run_tui
 from .update import check_for_update, run_update
-from .commands.task_commands import add_task, list_tasks, cancel_task, retry_task
-from .commands.monitor_commands import watch_daemon, view_logs
-from .commands.completion import setup_completion, TASK_ID, STATUS_CHOICES
 
 console = Console()
 
@@ -105,8 +104,8 @@ def init(force: bool, smart: bool, quick: bool, qmd: bool | None, path: Path | N
         # Smart init with Claude Code analysis
         from .analyze import (
             analyze_project,
-            generate_claude_md_from_analysis,
             generate_architecture_md,
+            generate_claude_md_from_analysis,
         )
         
         console.print("[dim]🔍 Analyzing project with Claude Code...[/dim]")
@@ -167,8 +166,8 @@ def refresh(full: bool, path: Path | None) -> None:
     """
     from .analyze import (
         analyze_project,
-        generate_claude_md_from_analysis,
         generate_architecture_md,
+        generate_claude_md_from_analysis,
     )
     from .detect import detect_project, get_project_summary
     
@@ -639,7 +638,7 @@ def pause_cmd() -> None:
     Examples:
         adw pause    # Pause task spawning
     """
-    from .daemon_state import read_state, request_pause, DaemonStatus
+    from .daemon_state import DaemonStatus, read_state, request_pause
     
     state = read_state()
     
@@ -670,7 +669,7 @@ def resume_cmd() -> None:
     Examples:
         adw resume    # Resume task spawning
     """
-    from .daemon_state import read_state, request_resume, DaemonStatus
+    from .daemon_state import DaemonStatus, read_state, request_resume
     
     state = read_state()
     
@@ -700,7 +699,7 @@ def status_cmd() -> None:
     Examples:
         adw status
     """
-    from .daemon_state import read_state, DaemonStatus
+    from .daemon_state import DaemonStatus, read_state
     
     state = read_state()
     
@@ -1043,7 +1042,7 @@ def github_process(issue_number: int, dry_run: bool) -> None:
         adw github process 456 --dry-run    # See details without running
     """
     from .agent.executor import generate_adw_id
-    from .integrations.github import get_issue, add_issue_comment
+    from .integrations.github import add_issue_comment, get_issue
     from .workflows.standard import run_standard_workflow
 
     console.print(f"[bold cyan]Processing GitHub issue #{issue_number}[/bold cyan]")
@@ -1337,7 +1336,7 @@ def notify(sound: str, message: str) -> None:
         adw notify "Task completed!"        # Custom message
         adw notify -s basso "Failed!"       # With error sound
     """
-    from .notifications import send_notification, NotificationSound, is_macos
+    from .notifications import NotificationSound, is_macos, send_notification
     
     if not is_macos():
         console.print("[red]Desktop notifications are only supported on macOS[/red]")
@@ -1516,15 +1515,15 @@ def rollback_cmd(task_id: str, checkpoint: str | None, rollback_all: bool) -> No
         adw rollback abc12345 -c 20260202T103045  # Rollback to specific checkpoint
         adw rollback abc12345 --all            # Undo ALL task changes
     """
-    from .recovery.checkpoints import (
-        rollback_to_checkpoint,
-        rollback_all_changes,
-        get_last_successful_checkpoint,
-        load_checkpoint,
-        list_checkpoints,
-    )
     from .agent.state import ADWState
     from .agent.task_updater import update_task_status
+    from .recovery.checkpoints import (
+        get_last_successful_checkpoint,
+        list_checkpoints,
+        load_checkpoint,
+        rollback_all_changes,
+        rollback_to_checkpoint,
+    )
 
     # Load task state to get worktree path
     state = ADWState.load(task_id)
@@ -1632,13 +1631,13 @@ def resume_task_cmd(task_id: str, checkpoint: str | None, workflow: str) -> None
         adw resume-task abc12345 -c 20260202T103045  # Resume from specific checkpoint
         adw resume-task abc12345 -w sdlc      # Resume with SDLC workflow
     """
+    from .agent.state import ADWState
+    from .agent.task_updater import update_task_status
     from .recovery.checkpoints import (
         CheckpointManager,
         get_last_successful_checkpoint,
         load_checkpoint,
     )
-    from .agent.state import ADWState
-    from .agent.task_updater import update_task_status
 
     # Get checkpoint
     if checkpoint:
@@ -1785,6 +1784,8 @@ def screenshot_cmd(
         get_dev_server_url,
         get_screenshots_dir,
         is_dev_server_running,
+    )
+    from .utils.screenshot import (
         list_screenshots as list_shots,
     )
 
@@ -2179,6 +2180,471 @@ def sessions_cmd(
             end_time = session.end_time.strftime("%Y-%m-%d %H:%M:%S")
             console.print(f"  [dim]Ended: {end_time}[/dim]")
         console.print()
+
+
+# =============================================================================
+# Context Engineering Commands (Phase 3)
+# =============================================================================
+
+
+@main.group()
+def prime() -> None:
+    """Context priming commands.
+
+    Generate and manage context priming commands for the project.
+    Priming commands load relevant context at session start.
+    """
+    pass
+
+
+@prime.command("generate")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output directory (default: .claude/commands/)",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Overwrite existing auto-generated commands",
+)
+def prime_generate(output: Path | None, force: bool) -> None:
+    """Generate priming commands based on project type.
+
+    Detects project type (Python, Node.js, Go, Rust, etc.) and
+    generates tailored priming commands.
+
+    \\b
+    Examples:
+        adw prime generate              # Generate to default location
+        adw prime generate -o ./cmds    # Custom output directory
+        adw prime generate --force      # Overwrite existing
+    """
+    from .context import detect_project_type, generate_all_prime_commands
+
+    detection = detect_project_type(Path.cwd())
+
+    if detection.project_type.value == "unknown":
+        console.print("[yellow]Could not detect project type[/yellow]")
+        console.print("[dim]Generating generic priming commands[/dim]")
+    else:
+        console.print(f"[green]Detected: {detection.project_type.value}[/green]")
+        if detection.framework:
+            console.print(f"[dim]Framework: {detection.framework}[/dim]")
+
+    output_dir = output or (Path.cwd() / ".claude" / "commands")
+
+    # Check for existing auto-generated files
+    if not force:
+        existing = list(output_dir.glob("*_auto.md"))
+        if existing:
+            console.print()
+            console.print("[yellow]Found existing auto-generated commands:[/yellow]")
+            for f in existing:
+                console.print(f"  {f.name}")
+            console.print()
+            if not click.confirm("Overwrite?"):
+                return
+
+    generated = generate_all_prime_commands(Path.cwd(), output_dir)
+
+    if generated:
+        console.print()
+        console.print("[green]Generated priming commands:[/green]")
+        for path in generated:
+            console.print(f"  {path.name}")
+        console.print()
+        console.print("[dim]Use /prime_auto, /prime_test_auto, etc. in Claude Code[/dim]")
+    else:
+        console.print("[red]No commands generated[/red]")
+
+
+@prime.command("show")
+def prime_show() -> None:
+    """Show detected project information.
+
+    Displays what project type was detected and available priming commands.
+    """
+    from .context import PRIME_TEMPLATES, detect_project_type
+
+    detection = detect_project_type(Path.cwd())
+
+    console.print("[bold cyan]Project Detection[/bold cyan]")
+    console.print()
+    console.print(f"[bold]Type:[/bold] {detection.project_type.value}")
+
+    if detection.framework:
+        console.print(f"[bold]Framework:[/bold] {detection.framework}")
+
+    if detection.test_framework:
+        console.print(f"[bold]Test Framework:[/bold] {detection.test_framework}")
+
+    if detection.config_files:
+        console.print(f"[bold]Config Files:[/bold] {', '.join(detection.config_files)}")
+
+    # Show patterns
+    template = PRIME_TEMPLATES.get(detection.project_type, {})
+    patterns = template.get("patterns", [])
+
+    if patterns:
+        console.print()
+        console.print("[bold]Patterns:[/bold]")
+        for p in patterns:
+            console.print(f"  • {p}")
+
+    # Show available commands
+    console.print()
+    console.print("[bold]Available Commands:[/bold]")
+
+    commands_dir = Path.cwd() / ".claude" / "commands"
+    if commands_dir.exists():
+        prime_cmds = list(commands_dir.glob("prime*.md"))
+        if prime_cmds:
+            for cmd in sorted(prime_cmds):
+                name = cmd.stem
+                auto = " [dim](auto)[/dim]" if "_auto" in name else ""
+                console.print(f"  /{name}{auto}")
+        else:
+            console.print("  [dim]None found[/dim]")
+    else:
+        console.print("  [dim].claude/commands not found - run 'adw init' first[/dim]")
+
+
+@prime.command("refresh")
+@click.option(
+    "--deep",
+    is_flag=True,
+    help="Use Claude Code for deep analysis (slower but more accurate)",
+)
+def prime_refresh(deep: bool) -> None:
+    """Refresh priming commands.
+
+    Regenerates all auto-generated priming commands.
+    Use after major codebase changes.
+
+    \\b
+    Examples:
+        adw prime refresh          # Quick refresh
+        adw prime refresh --deep   # Deep analysis with Claude
+    """
+    from .context import generate_all_prime_commands
+
+    console.print("[dim]Refreshing priming commands...[/dim]")
+
+    if deep:
+        # TODO: Integrate with Claude Code analysis
+        console.print("[yellow]Deep analysis not yet implemented[/yellow]")
+        console.print("[dim]Using standard detection[/dim]")
+
+    output_dir = Path.cwd() / ".claude" / "commands"
+
+    generated = generate_all_prime_commands(Path.cwd(), output_dir)
+
+    if generated:
+        console.print(f"[green]✓ Refreshed {len(generated)} priming commands[/green]")
+    else:
+        console.print("[yellow]No commands generated[/yellow]")
+
+
+@main.group()
+def bundle() -> None:
+    """Context bundle commands.
+
+    Manage context bundles - snapshots of files accessed during sessions.
+    Use bundles to quickly restore context for similar tasks.
+    """
+    pass
+
+
+@bundle.command("list")
+@click.option("--limit", "-n", type=int, default=10, help="Maximum bundles to show")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def bundle_list(limit: int, as_json: bool) -> None:
+    """List saved context bundles.
+
+    \\b
+    Examples:
+        adw bundle list              # Show recent bundles
+        adw bundle list -n 20        # Show more bundles
+        adw bundle list --json       # JSON output
+    """
+    import json as json_lib
+
+    from .context import list_bundles
+
+    bundles = list_bundles(limit=limit)
+
+    if not bundles:
+        console.print("[yellow]No bundles found[/yellow]")
+        console.print("[dim]Bundles are saved when tasks complete[/dim]")
+        return
+
+    if as_json:
+        output = [b.to_dict() for b in bundles]
+        click.echo(json_lib.dumps(output, indent=2, default=str))
+        return
+
+    console.print(f"[bold cyan]Context Bundles[/bold cyan] [dim]({len(bundles)} shown)[/dim]")
+    console.print()
+
+    for bundle in bundles:
+        created = bundle.created_at.strftime("%Y-%m-%d %H:%M")
+        tags = f" [dim][{', '.join(bundle.tags)}][/dim]" if bundle.tags else ""
+
+        console.print(f"[bold]{bundle.task_id}[/bold]{tags}")
+        console.print(f"  {bundle.file_count} files, {bundle.total_lines} lines")
+        console.print(f"  [dim]Created: {created}[/dim]")
+        if bundle.description:
+            desc = bundle.description[:60]
+            if len(bundle.description) > 60:
+                desc += "..."
+            console.print(f"  [dim]{desc}[/dim]")
+        console.print()
+
+
+@bundle.command("show")
+@click.argument("task_id")
+@click.option("--files", "-f", is_flag=True, help="List all files in bundle")
+def bundle_show(task_id: str, files: bool) -> None:
+    """Show details of a specific bundle.
+
+    \\b
+    Examples:
+        adw bundle show abc12345
+        adw bundle show abc12345 --files
+    """
+    from .context import load_bundle
+
+    bundle = load_bundle(task_id)
+
+    if not bundle:
+        console.print(f"[red]Bundle not found: {task_id}[/red]")
+        return
+
+    console.print(f"[bold cyan]Bundle: {bundle.task_id}[/bold cyan]")
+    console.print()
+    console.print(f"[bold]Created:[/bold] {bundle.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    console.print(f"[bold]Files:[/bold] {bundle.file_count}")
+    console.print(f"[bold]Lines:[/bold] {bundle.total_lines}")
+
+    if bundle.tags:
+        console.print(f"[bold]Tags:[/bold] {', '.join(bundle.tags)}")
+
+    if bundle.description:
+        console.print(f"[bold]Description:[/bold] {bundle.description}")
+
+    if files:
+        console.print()
+        console.print("[bold]Files:[/bold]")
+        for bf in bundle.files:
+            lines = f":{bf.lines_start}-{bf.lines_end}" if bf.lines_end else ""
+            console.print(f"  {bf.path}{lines}")
+
+
+@bundle.command("diff")
+@click.argument("task_id1")
+@click.argument("task_id2")
+def bundle_diff_cmd(task_id1: str, task_id2: str) -> None:
+    """Show differences between two bundles.
+
+    \\b
+    Examples:
+        adw bundle diff abc12345 def67890
+    """
+    from .context import diff_bundles
+
+    diff = diff_bundles(task_id1, task_id2)
+
+    if not diff:
+        console.print("[red]Could not compare bundles[/red]")
+        console.print("[dim]Ensure both bundle IDs exist[/dim]")
+        return
+
+    console.print(f"[bold cyan]Bundle Diff: {task_id1} → {task_id2}[/bold cyan]")
+    console.print()
+
+    if diff.added:
+        console.print(f"[green]Added ({len(diff.added)}):[/green]")
+        for f in diff.added[:10]:
+            console.print(f"  + {f}")
+        if len(diff.added) > 10:
+            console.print(f"  [dim]...and {len(diff.added) - 10} more[/dim]")
+        console.print()
+
+    if diff.removed:
+        console.print(f"[red]Removed ({len(diff.removed)}):[/red]")
+        for f in diff.removed[:10]:
+            console.print(f"  - {f}")
+        if len(diff.removed) > 10:
+            console.print(f"  [dim]...and {len(diff.removed) - 10} more[/dim]")
+        console.print()
+
+    console.print(f"[dim]Common: {len(diff.common)} files[/dim]")
+
+
+@bundle.command("suggest")
+@click.argument("description")
+@click.option("--top", "-n", type=int, default=3, help="Number of suggestions")
+def bundle_suggest(description: str, top: int) -> None:
+    """Suggest bundles similar to a description.
+
+    Finds bundles with similar files or tags.
+
+    \\b
+    Examples:
+        adw bundle suggest "implement authentication"
+        adw bundle suggest "fix api bug" --top 5
+    """
+    from .context import suggest_bundles
+
+    suggestions = suggest_bundles(description, top_n=top)
+
+    if not suggestions:
+        console.print("[yellow]No matching bundles found[/yellow]")
+        return
+
+    console.print(f"[bold cyan]Suggested Bundles for:[/bold cyan] {description}")
+    console.print()
+
+    for bundle, score in suggestions:
+        console.print(f"[bold]{bundle.task_id}[/bold] [dim](score: {score:.1f})[/dim]")
+        console.print(f"  {bundle.file_count} files, {bundle.total_lines} lines")
+        if bundle.description:
+            desc = bundle.description[:50]
+            if len(bundle.description) > 50:
+                desc += "..."
+            console.print(f"  [dim]{desc}[/dim]")
+        console.print()
+
+    console.print("[dim]Use 'adw bundle load <task_id>' to restore context[/dim]")
+
+
+@bundle.command("load")
+@click.argument("task_id")
+@click.option("--list-only", "-l", is_flag=True, help="Just list files, don't load")
+def bundle_load(task_id: str, list_only: bool) -> None:
+    """Load a context bundle.
+
+    Displays files from the bundle for context restoration.
+
+    \\b
+    Examples:
+        adw bundle load abc12345
+        adw bundle load abc12345 --list-only
+    """
+    from .context import get_bundle_file_contents, load_bundle
+
+    bundle = load_bundle(task_id)
+
+    if not bundle:
+        console.print(f"[red]Bundle not found: {task_id}[/red]")
+        return
+
+    console.print(f"[bold cyan]Loading Bundle: {bundle.task_id}[/bold cyan]")
+    console.print(f"[dim]{bundle.file_count} files, {bundle.total_lines} lines[/dim]")
+    console.print()
+
+    if list_only:
+        console.print("[bold]Files in bundle:[/bold]")
+        for bf in bundle.files:
+            console.print(f"  {bf.path}")
+        return
+
+    # Load file contents
+    contents = get_bundle_file_contents(bundle)
+
+    if not contents:
+        console.print("[yellow]Could not load any files (may have been moved/deleted)[/yellow]")
+        return
+
+    console.print(f"[green]Loaded {len(contents)} files[/green]")
+    console.print()
+
+    for path, content in contents.items():
+        line_count = content.count("\n") + 1
+        console.print(f"[bold]{path}[/bold] [dim]({line_count} lines)[/dim]")
+
+
+@bundle.command("save")
+@click.argument("task_id")
+@click.argument("files", nargs=-1, required=True)
+@click.option("--description", "-d", help="Bundle description")
+@click.option("--tag", "-t", "tags", multiple=True, help="Add tags")
+def bundle_save(task_id: str, files: tuple, description: str | None, tags: tuple) -> None:
+    """Manually save a context bundle.
+
+    \\b
+    Examples:
+        adw bundle save mytask src/main.py src/utils.py
+        adw bundle save auth-work src/**/*.py -d "Auth implementation"
+        adw bundle save feature-x src/ -t auth -t api
+    """
+    from .context import save_bundle
+
+    # Expand globs
+    expanded_files = []
+    for pattern in files:
+        if "*" in pattern:
+            matches = list(Path.cwd().glob(pattern))
+            expanded_files.extend([str(m.relative_to(Path.cwd())) for m in matches if m.is_file()])
+        else:
+            expanded_files.append(pattern)
+
+    if not expanded_files:
+        console.print("[red]No files matched[/red]")
+        return
+
+    bundle = save_bundle(
+        task_id=task_id,
+        files=expanded_files,
+        description=description or "",
+        tags=list(tags) if tags else None,
+    )
+
+    console.print(f"[green]✓ Saved bundle: {bundle.task_id}[/green]")
+    console.print(f"[dim]{bundle.file_count} files, {bundle.total_lines} lines[/dim]")
+
+
+@bundle.command("delete")
+@click.argument("task_id")
+@click.confirmation_option(prompt="Delete this bundle?")
+def bundle_delete(task_id: str) -> None:
+    """Delete a context bundle.
+
+    \\b
+    Examples:
+        adw bundle delete abc12345
+    """
+    from .context import delete_bundle
+
+    if delete_bundle(task_id):
+        console.print(f"[green]✓ Deleted bundle: {task_id}[/green]")
+    else:
+        console.print(f"[red]Bundle not found: {task_id}[/red]")
+
+
+@bundle.command("compress")
+@click.option("--days", "-d", type=int, default=7, help="Compress bundles older than N days")
+def bundle_compress(days: int) -> None:
+    """Compress old bundles to save space.
+
+    \\b
+    Examples:
+        adw bundle compress              # Compress bundles > 7 days old
+        adw bundle compress --days 30    # Compress bundles > 30 days old
+    """
+    from .context.bundles import compress_old_bundles
+
+    console.print(f"[dim]Compressing bundles older than {days} days...[/dim]")
+
+    count = compress_old_bundles(days=days)
+
+    if count > 0:
+        console.print(f"[green]✓ Compressed {count} bundle(s)[/green]")
+    else:
+        console.print("[dim]No bundles to compress[/dim]")
 
 
 # =============================================================================
