@@ -498,7 +498,7 @@ EXAMPLES: list[Example] = [
         commands=[
             "adw webhook start --port 9000",
             "adw webhook key generate my-key",
-            'curl -X POST http://localhost:9000/api/tasks \\',
+            "curl -X POST http://localhost:9000/api/tasks \\",
             '  -H "Authorization: Bearer $API_KEY" \\',
             '  -d \'{"description": "Add feature X"}\'',
         ],

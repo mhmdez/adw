@@ -434,8 +434,7 @@ def run_sdlc_workflow(
 
     if not _skip_deprecation_warning:
         warnings.warn(
-            "run_sdlc_workflow is deprecated. Use run_adaptive_workflow with "
-            "complexity=TaskComplexity.FULL instead.",
+            "run_sdlc_workflow is deprecated. Use run_adaptive_workflow with complexity=TaskComplexity.FULL instead.",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class SpecStatus(str, Enum):
@@ -33,8 +33,7 @@ class Spec(BaseModel):
     priority: int = 0
     dependencies: list[str] = []
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
     def is_actionable(self) -> bool:

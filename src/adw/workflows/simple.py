@@ -36,8 +36,7 @@ def run_simple_workflow(
     DEPRECATED: Use run_adaptive_workflow with complexity=TaskComplexity.MINIMAL instead.
     """
     warnings.warn(
-        "run_simple_workflow is deprecated. Use run_adaptive_workflow with "
-        "complexity=TaskComplexity.MINIMAL instead.",
+        "run_simple_workflow is deprecated. Use run_adaptive_workflow with complexity=TaskComplexity.MINIMAL instead.",
         DeprecationWarning,
         stacklevel=2,
     )
