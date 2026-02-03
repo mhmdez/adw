@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
-**Version:** 0.5.26
-**Status:** Phase 11 IN PROGRESS - P11-2 (plugin simplification), P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages) complete. Plugin system removed (884 lines), QMD integration inlined. Total: 1415 tests passing. Code quality: all ruff lint checks pass.
+**Version:** 0.5.27
+**Status:** Phase 11 IN PROGRESS - P11-2 (plugin simplification), P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages), P11-6 (help & discoverability) complete. Added `adw examples` command with 30+ categorized examples and docs/examples/ guides. Total: 1466 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -26,7 +26,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
 | 10 - Customization | **COMPLETE** | **100%** |
-| 11 - Simplification | **IN PROGRESS** | **57%** (4/7 tasks) |
+| 11 - Simplification | **IN PROGRESS** | **71%** (5/7 tasks) |
 
 **Existing Strengths:**
 - Agent subsystem is production-ready (executor, manager, state, worktree, ports)
@@ -1373,7 +1373,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-11/simplification.md`
-**Status:** In Progress (57% - P11-2, P11-3, P11-4, P11-5 complete)
+**Status:** In Progress (71% - P11-2, P11-3, P11-4, P11-5, P11-6 complete)
 
 ### Tasks
 
@@ -1445,9 +1445,27 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - **Files:** `src/adw/utils/errors.py`, `src/adw/utils/__init__.py`, `src/adw/cli.py`
   - **Tests:** `tests/test_errors.py` - 59 tests covering all error utilities
 
-- [ ] **P11-6** Improve help & discoverability
-  - Better `--help` with examples
-  - Add `adw examples` command
+- [x] **P11-6** Improve help & discoverability ✅
+  - Created `src/adw/help.py` (500+ lines) with comprehensive examples catalog
+  - `Example` dataclass with title, description, commands, category, complexity, notes, related
+  - `Category` enum: quickstart, tasks, workflows, github, monitoring, parallel, config, integrations
+  - `Complexity` enum: beginner, intermediate, advanced
+  - 30+ curated examples covering all major features
+  - Functions: `get_examples_by_category()`, `get_examples_by_complexity()`, `search_examples()`
+  - `format_category_name()` and `format_complexity_name()` for display
+  - Added `adw examples` command group with subcommands:
+    - `adw examples list` - Show all categories
+    - `adw examples quickstart/tasks/workflows/github/monitoring/parallel/config/integrations` - By category
+    - `adw examples beginner/intermediate/advanced` - By complexity
+    - `adw examples search <keyword>` - Search examples
+    - `adw examples all` - Show all examples
+    - All support `--verbose` flag for detailed notes
+  - Created `docs/examples/` directory with guides:
+    - `QUICK_START.md` - 5-minute getting started guide
+    - `GITHUB_INTEGRATION.md` - GitHub automation guide
+    - `WORKFLOWS.md` - Workflow customization guide
+  - **Files:** `src/adw/help.py`, `src/adw/cli.py`, `docs/examples/*.md`
+  - **Tests:** `tests/test_help.py` - 51 tests covering all help functionality
 
 - [ ] **P11-7** Write documentation
   - Getting started guide (< 5 minutes)

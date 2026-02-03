@@ -6440,5 +6440,330 @@ def config_migrate(dry_run: bool) -> None:
         console.print("\n[red]Failed to save config[/red]")
 
 
+# =============================================================================
+# Examples Command Group
+# =============================================================================
+
+
+@main.group()
+def examples() -> None:
+    """Browse usage examples and tutorials.
+
+    ADW includes categorized examples for common use cases.
+    Run 'adw examples list' to see all categories.
+
+    \\b
+    Quick access:
+        adw examples beginner    # Getting started examples
+        adw examples search X    # Search for specific topic
+
+    \\b
+    Examples:
+        adw examples list              # List all categories
+        adw examples quickstart        # Quick start examples
+        adw examples workflows         # Workflow examples
+        adw examples search github     # Search for 'github'
+    """
+    pass
+
+
+@examples.command("list")
+def examples_list() -> None:
+    """List all example categories.
+
+    Shows available categories with example counts.
+    Use 'adw examples <category>' to see examples.
+
+    \\b
+    Examples:
+        adw examples list
+    """
+    from .help import format_category_name, get_category_summary
+
+    console.print("[bold cyan]ADW Examples[/bold cyan]")
+    console.print("[dim]Usage examples organized by topic[/dim]")
+    console.print()
+
+    summary = get_category_summary()
+
+    for category, count in summary.items():
+        name = format_category_name(category)
+        cmd = category.value
+        console.print(f"  [green]{cmd:15}[/green] {name} ({count} examples)")
+
+    console.print()
+    console.print("[dim]Run 'adw examples <category>' to see examples[/dim]")
+    console.print("[dim]Run 'adw examples search <keyword>' to search[/dim]")
+
+
+@examples.command("quickstart")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_quickstart(verbose: bool) -> None:
+    """Getting started examples.
+
+    Essential examples for new users.
+
+    \\b
+    Examples:
+        adw examples quickstart
+        adw examples quickstart -v  # With notes
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.QUICKSTART)
+    _display_examples("Quick Start", exs, verbose)
+
+
+@examples.command("tasks")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_tasks(verbose: bool) -> None:
+    """Task management examples.
+
+    Creating, managing, and organizing tasks.
+
+    \\b
+    Examples:
+        adw examples tasks
+        adw examples tasks -v
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.TASKS)
+    _display_examples("Task Management", exs, verbose)
+
+
+@examples.command("workflows")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_workflows(verbose: bool) -> None:
+    """Workflow examples.
+
+    Choosing and customizing workflows.
+
+    \\b
+    Examples:
+        adw examples workflows
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.WORKFLOWS)
+    _display_examples("Workflows", exs, verbose)
+
+
+@examples.command("github")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_github(verbose: bool) -> None:
+    """GitHub integration examples.
+
+    Issues, PRs, and review workflows.
+
+    \\b
+    Examples:
+        adw examples github
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.GITHUB)
+    _display_examples("GitHub Integration", exs, verbose)
+
+
+@examples.command("monitoring")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_monitoring(verbose: bool) -> None:
+    """Monitoring and reporting examples.
+
+    Logs, events, metrics, and reports.
+
+    \\b
+    Examples:
+        adw examples monitoring
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.MONITORING)
+    _display_examples("Monitoring & Reports", exs, verbose)
+
+
+@examples.command("parallel")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_parallel(verbose: bool) -> None:
+    """Parallel execution examples.
+
+    Worktrees and multi-repo workflows.
+
+    \\b
+    Examples:
+        adw examples parallel
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.PARALLEL)
+    _display_examples("Parallel Execution", exs, verbose)
+
+
+@examples.command("config")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_config_cmd(verbose: bool) -> None:
+    """Configuration examples.
+
+    Settings, priming, and bundles.
+
+    \\b
+    Examples:
+        adw examples config
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.CONFIG)
+    _display_examples("Configuration", exs, verbose)
+
+
+@examples.command("integrations")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_integrations(verbose: bool) -> None:
+    """External integration examples.
+
+    Linear, Notion, Slack, and webhooks.
+
+    \\b
+    Examples:
+        adw examples integrations
+    """
+    from .help import Category, get_examples_by_category
+
+    exs = get_examples_by_category(Category.INTEGRATIONS)
+    _display_examples("External Integrations", exs, verbose)
+
+
+@examples.command("beginner")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_beginner(verbose: bool) -> None:
+    """Beginner-friendly examples.
+
+    Easy examples for getting started.
+
+    \\b
+    Examples:
+        adw examples beginner
+    """
+    from .help import Complexity, get_examples_by_complexity
+
+    exs = get_examples_by_complexity(Complexity.BEGINNER)
+    _display_examples("Beginner Examples", exs, verbose)
+
+
+@examples.command("intermediate")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_intermediate(verbose: bool) -> None:
+    """Intermediate examples.
+
+    Examples for users comfortable with basics.
+
+    \\b
+    Examples:
+        adw examples intermediate
+    """
+    from .help import Complexity, get_examples_by_complexity
+
+    exs = get_examples_by_complexity(Complexity.INTERMEDIATE)
+    _display_examples("Intermediate Examples", exs, verbose)
+
+
+@examples.command("advanced")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_advanced(verbose: bool) -> None:
+    """Advanced examples.
+
+    Complex workflows and customization.
+
+    \\b
+    Examples:
+        adw examples advanced
+    """
+    from .help import Complexity, get_examples_by_complexity
+
+    exs = get_examples_by_complexity(Complexity.ADVANCED)
+    _display_examples("Advanced Examples", exs, verbose)
+
+
+@examples.command("search")
+@click.argument("query")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_search(query: str, verbose: bool) -> None:
+    """Search examples by keyword.
+
+    Searches titles, descriptions, and commands.
+
+    \\b
+    Examples:
+        adw examples search github
+        adw examples search workflow
+        adw examples search slack
+    """
+    from .help import search_examples
+
+    results = search_examples(query)
+
+    if not results:
+        console.print(f"[yellow]No examples found for '{query}'[/yellow]")
+        console.print("[dim]Try: adw examples list[/dim]")
+        return
+
+    _display_examples(f"Search: '{query}'", results, verbose)
+
+
+@examples.command("all")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed notes")
+def examples_all(verbose: bool) -> None:
+    """Show all examples.
+
+    Complete list of all available examples.
+
+    \\b
+    Examples:
+        adw examples all
+        adw examples all -v
+    """
+    from .help import EXAMPLES
+
+    _display_examples("All Examples", EXAMPLES, verbose)
+
+
+def _display_examples(title: str, examples_list: list, verbose: bool) -> None:
+    """Helper to display a list of examples."""
+    from .help import format_complexity_name
+
+    console.print(f"[bold cyan]{title}[/bold cyan]")
+    console.print(f"[dim]{len(examples_list)} example(s)[/dim]")
+    console.print()
+
+    for i, example in enumerate(examples_list):
+        if i > 0:
+            console.print()  # Separator between examples
+
+        # Title with complexity indicator
+        complexity = format_complexity_name(example.complexity)
+        console.print(f"[bold]{example.title}[/bold] {complexity}")
+        console.print(f"[dim]{example.description}[/dim]")
+        console.print()
+
+        # Commands
+        for cmd in example.commands:
+            if cmd.startswith("#"):
+                console.print(f"  [dim]{cmd}[/dim]")
+            else:
+                console.print(f"  [green]$ {cmd}[/green]")
+
+        # Notes (if verbose)
+        if verbose and example.notes:
+            console.print()
+            for note in example.notes:
+                console.print(f"  [dim]→ {note}[/dim]")
+
+        # Related commands (if verbose)
+        if verbose and example.related:
+            console.print()
+            console.print(f"  [dim]See also: {', '.join(example.related)}[/dim]")
+
+
 if __name__ == "__main__":
     main()
