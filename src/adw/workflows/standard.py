@@ -15,7 +15,7 @@ from ..agent.state import ADWState
 from ..agent.task_updater import mark_done, mark_failed
 from ..agent.utils import generate_adw_id
 from ..agent.worktree import create_worktree
-from ..plugins import get_plugin_manager
+from ..integrations import qmd as qmd_integration
 
 
 def run_standard_workflow(
@@ -65,20 +65,25 @@ def run_standard_workflow(
         # Build plan prompt and let plugins inject context
         plan_prompt = f"/plan {adw_id} {task_description}"
 
+        # Inject QMD context if available
         try:
-            manager = get_plugin_manager()
-            plan_prompt = manager.dispatch_plan(task_description, plan_prompt)
+            if qmd_integration.is_available():
+                qmd_context = qmd_integration.get_context_for_task(task_description)
+                if qmd_context:
+                    plan_prompt = f"{plan_prompt}\n\n{qmd_context}"
         except Exception:
-            pass  # Don't fail if plugins have issues
+            pass  # Don't fail if QMD has issues
 
-        plan_response = prompt_with_retry(AgentPromptRequest(
-            prompt=plan_prompt,
-            adw_id=adw_id,
-            agent_name=f"planner-{adw_id}",
-            model=model,
-            working_dir=str(worktree_path),
-            dangerously_skip_permissions=True,
-        ))
+        plan_response = prompt_with_retry(
+            AgentPromptRequest(
+                prompt=plan_prompt,
+                adw_id=adw_id,
+                agent_name=f"planner-{adw_id}",
+                model=model,
+                working_dir=str(worktree_path),
+                dangerously_skip_permissions=True,
+            )
+        )
 
         if not plan_response.success:
             raise Exception(f"Planning failed: {plan_response.error_message}")
@@ -94,25 +99,24 @@ def run_standard_workflow(
         state.save("implement")
 
         impl_args = plan_file if plan_file else task_description
-        impl_response = prompt_with_retry(AgentPromptRequest(
-            prompt=f"/implement {impl_args}",
-            adw_id=adw_id,
-            agent_name=f"builder-{adw_id}",
-            model=model,
-            working_dir=str(worktree_path),
-            dangerously_skip_permissions=True,
-        ))
+        impl_response = prompt_with_retry(
+            AgentPromptRequest(
+                prompt=f"/implement {impl_args}",
+                adw_id=adw_id,
+                agent_name=f"builder-{adw_id}",
+                model=model,
+                working_dir=str(worktree_path),
+                dangerously_skip_permissions=True,
+            )
+        )
 
         if not impl_response.success:
             raise Exception(f"Implementation failed: {impl_response.error_message}")
 
         # Get commit
         import subprocess
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(worktree_path),
-            capture_output=True, text=True
-        )
+
+        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(worktree_path), capture_output=True, text=True)
         if result.returncode == 0:
             commit_hash = result.stdout.strip()
 

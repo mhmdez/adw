@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
-**Version:** 0.5.25
-**Status:** Phase 11 IN PROGRESS - P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages) complete. Unified config system with CLI commands. Error handling utilities with --debug flag. Total: 1415 tests passing. Code quality: all ruff lint checks pass.
+**Version:** 0.5.26
+**Status:** Phase 11 IN PROGRESS - P11-2 (plugin simplification), P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages) complete. Plugin system removed (884 lines), QMD integration inlined. Total: 1415 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -26,13 +26,13 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
 | 10 - Customization | **COMPLETE** | **100%** |
-| 11 - Simplification | **IN PROGRESS** | **43%** (3/7 tasks) |
+| 11 - Simplification | **IN PROGRESS** | **57%** (4/7 tasks) |
 
 **Existing Strengths:**
 - Agent subsystem is production-ready (executor, manager, state, worktree, ports)
 - Workflow engines work (simple, standard, sdlc)
 - TUI dashboard functional with real-time log streaming
-- Plugin system complete with QMD integration
+- QMD semantic search integration (direct, no plugin abstraction)
 - Task parsing and status updates work
 - Test framework detection (pytest, jest, vitest, go, cargo, etc.)
 - Test execution with result parsing
@@ -1373,7 +1373,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-11/simplification.md`
-**Status:** In Progress (43% - P11-3, P11-4, P11-5 complete)
+**Status:** In Progress (57% - P11-2, P11-3, P11-4, P11-5 complete)
 
 ### Tasks
 
@@ -1382,9 +1382,20 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Adjust behavior based on task complexity
   - Eliminate multi-workflow distinction
 
-- [ ] **P11-2** Simplify plugin system
-  - Inline QMD integration (remove plugin abstraction if unused)
-  - Document extension mechanism
+- [x] **P11-2** Simplify plugin system ✅
+  - Removed entire plugin system (884 lines of code eliminated)
+  - Deleted: `src/adw/plugins/` directory (base.py, manager.py, builtins/qmd/)
+  - Inlined QMD integration directly:
+    - `adw qmd status` - Show QMD installation status
+    - `adw qmd init [path]` - Initialize QMD collection
+    - `adw qmd search <query>` - Search project documents
+    - `adw qmd update` - Re-index collections
+  - Updated `init.py` to call `qmd_integration` directly during project init
+  - Updated `standard.py` workflow to inject QMD context directly
+  - Removed plugin CLI commands (install, remove, list, status)
+  - **Files removed:** `src/adw/plugins/*` (884 lines)
+  - **Files modified:** `src/adw/cli.py`, `src/adw/init.py`, `src/adw/workflows/standard.py`
+  - **Tests:** 1415 tests passing, all ruff lint checks pass
 
 - [x] **P11-3** TUI dashboard cleanup ✅
   - Removed 8 unused widget files: animated.py, splash.py, logo_header.py, status_bar.py, task_detail.py, task_list.py, phase_indicator.py, spec_list.py (~350 lines removed)

@@ -36,8 +36,7 @@ def check_for_update_notice() -> None:
         if latest and latest > current:
             console.print()
             console.print(
-                f"[yellow]⚡ Update available:[/yellow] [dim]{current}[/dim] → "
-                f"[bold cyan]{latest}[/bold cyan]"
+                f"[yellow]⚡ Update available:[/yellow] [dim]{current}[/dim] → [bold cyan]{latest}[/bold cyan]"
             )
             console.print("[dim]   Run [/dim][cyan]adw update[/cyan][dim] to upgrade[/dim]")
             console.print()
@@ -133,12 +132,8 @@ def init(force: bool, smart: bool, quick: bool, qmd: bool | None, path: Path | N
             console.print()
 
             # Generate docs from analysis
-            claude_md = generate_claude_md_from_analysis(
-                analysis.__dict__, project_path
-            )
-            architecture_md = generate_architecture_md(
-                analysis.__dict__, project_path
-            )
+            claude_md = generate_claude_md_from_analysis(analysis.__dict__, project_path)
+            architecture_md = generate_architecture_md(analysis.__dict__, project_path)
 
             # Write generated files
             claude_path = project_path / "CLAUDE.md"
@@ -200,9 +195,7 @@ def refresh(full: bool, path: Path | None) -> None:
             console.print(f"[dim]  Stack: {', '.join(analysis.stack)}[/dim]")
 
             # Generate and write updated docs
-            claude_md = generate_claude_md_from_analysis(
-                analysis.__dict__, project_path
-            )
+            claude_md = generate_claude_md_from_analysis(analysis.__dict__, project_path)
             claude_md_path.write_text(claude_md)
             console.print("[green]✓ Updated CLAUDE.md[/green]")
 
@@ -224,6 +217,7 @@ def refresh(full: bool, path: Path | None) -> None:
 
             # Update CLAUDE.md with new detection
             from .init import generate_claude_md
+
             content = generate_claude_md(detections, project_path)
             claude_md_path.write_text(content)
             console.print("[green]✓ Updated CLAUDE.md[/green]")
@@ -2146,9 +2140,7 @@ def pr_show(group_id: str, refresh: bool) -> None:
     console.print("[bold]Pull Requests:[/bold]")
     for linked_pr in group.prs:
         state_icon = {"open": "○", "merged": "✓", "closed": "✗"}.get(linked_pr.state, "?")
-        state_color = {"open": "yellow", "merged": "green", "closed": "red"}.get(
-            linked_pr.state, "white"
-        )
+        state_color = {"open": "yellow", "merged": "green", "closed": "red"}.get(linked_pr.state, "white")
 
         approved_str = " [green]approved[/green]" if linked_pr.approved else ""
         mergeable_str = ""
@@ -2158,9 +2150,7 @@ def pr_show(group_id: str, refresh: bool) -> None:
             elif linked_pr.mergeable is False:
                 mergeable_str = " [red]conflicts[/red]"
 
-        console.print(
-            f"  [{state_color}]{state_icon}[/] {linked_pr.full_name}{approved_str}{mergeable_str}"
-        )
+        console.print(f"  [{state_color}]{state_icon}[/] {linked_pr.full_name}{approved_str}{mergeable_str}")
         console.print(f"    {linked_pr.title}")
         console.print(f"    [dim]{linked_pr.url}[/dim]")
 
@@ -2169,11 +2159,7 @@ def pr_show(group_id: str, refresh: bool) -> None:
         console.print("[green]✓ All PRs ready to merge[/green]")
         console.print(f"[dim]Use 'adw pr merge {group.id}' to merge[/dim]")
     elif group.status == "pending":
-        not_ready = [
-            pr.full_name
-            for pr in group.prs
-            if not (pr.state == "open" and pr.approved and pr.mergeable)
-        ]
+        not_ready = [pr.full_name for pr in group.prs if not (pr.state == "open" and pr.approved and pr.mergeable)]
         if not_ready:
             console.print()
             console.print("[yellow]Not ready for merge:[/yellow]")
@@ -2879,7 +2865,7 @@ def webhook_key_generate(name: str, rate_limit: int, expires: int | None) -> Non
     console.print(f"  [cyan]{raw_key}[/cyan]")
     console.print()
     console.print("[dim]Usage:[/dim]")
-    console.print('  [dim]curl -X POST http://localhost:8080/api/tasks \\[/dim]')
+    console.print("  [dim]curl -X POST http://localhost:8080/api/tasks \\[/dim]")
     console.print(f'  [dim]  -H "Authorization: Bearer {raw_key}" \\[/dim]')
     console.print('  [dim]  -H "Content-Type: application/json" \\[/dim]')
     console.print('  [dim]  -d \'{"description": "My task"}\'[/dim]')
@@ -3054,120 +3040,174 @@ def notify(sound: str, message: str) -> None:
 
 
 # =============================================================================
-# Plugin System
+# QMD Commands (Semantic Search)
 # =============================================================================
 
 
 @main.group()
-def plugin() -> None:
-    """Manage ADW plugins.
+def qmd() -> None:
+    """Semantic search commands using QMD.
 
-    Plugins extend ADW with additional features like semantic search,
-    GitHub integration, notifications, and more.
+    QMD (Query Markup Documents) provides semantic search capabilities
+    for your project documentation and code.
 
     \\b
     Examples:
-        adw plugin list                  # Show installed plugins
-        adw plugin install qmd           # Install a plugin
-        adw plugin remove qmd            # Uninstall
+        adw qmd status                   # Check QMD installation
+        adw qmd init                     # Index current project
+        adw qmd search "error handling"  # Search docs
+        adw qmd update                   # Re-index collections
     """
     pass
 
 
-@plugin.command("list")
-def plugin_list() -> None:
-    """List installed plugins."""
-    from .plugins import get_plugin_manager
+@qmd.command("status")
+def qmd_status() -> None:
+    """Show QMD installation and index status."""
+    from .integrations import qmd as qmd_integration
 
-    manager = get_plugin_manager()
-    plugins = manager.all
+    status = qmd_integration.get_status()
 
-    if not plugins:
-        console.print("[yellow]No plugins installed[/yellow]")
+    if not status.get("available"):
+        console.print("[red]✗ qmd not installed[/red]")
         console.print()
-        console.print("[dim]Available plugins:[/dim]")
-        console.print("  • qmd - Semantic search and context injection")
-        console.print()
-        console.print("[dim]Install with: adw plugin install <name>[/dim]")
+        console.print("[dim]Install with:[/dim]")
+        console.print("  [cyan]bun install -g github:tobi/qmd[/cyan]")
         return
 
-    console.print("[bold cyan]Installed Plugins:[/bold cyan]")
+    console.print("[green]✓ qmd installed[/green]")
     console.print()
 
-    for p in plugins:
-        status_icon = "[green]✓[/green]" if p.enabled else "[yellow]○[/yellow]"
-        console.print(f"{status_icon} [bold]{p.name}[/bold] v{p.version}")
-        if p.description:
-            console.print(f"   [dim]{p.description}[/dim]")
+    collections = status.get("collections", [])
+    if collections:
+        console.print("[bold]Collections:[/bold]")
+        for col in collections:
+            console.print(f"  • {col}")
+    else:
+        console.print("[yellow]No collections found[/yellow]")
+
+    if status.get("documents"):
+        console.print()
+        console.print(f"[dim]Total documents: {status['documents']}[/dim]")
 
 
-@plugin.command("install")
-@click.argument("name")
-def plugin_install(name: str) -> None:
-    """Install a plugin.
+@qmd.command("init")
+@click.option("--name", "-n", help="Collection name")
+@click.option("--mask", "-m", default="**/*.md", help="File pattern to index")
+@click.argument("path", required=False, type=click.Path(exists=True, path_type=Path))
+def qmd_init(name: str | None, mask: str, path: Path | None) -> None:
+    """Initialize QMD for the current project.
 
     \\b
     Examples:
-        adw plugin install qmd           # Built-in plugin
-        adw plugin install ./my-plugin   # From local path
-        adw plugin install gh:user/repo  # From GitHub
+        adw qmd init                     # Index current directory
+        adw qmd init ./docs              # Index specific path
+        adw qmd init -n myproject        # Custom collection name
+        adw qmd init -m "**/*.py"        # Index Python files
     """
-    from .plugins import get_plugin_manager
+    from .integrations import qmd as qmd_integration
 
-    manager = get_plugin_manager()
+    project_path = path or Path.cwd()
 
-    console.print(f"[dim]Installing {name}...[/dim]")
-
-    success, message = manager.install(name)
-
-    if success:
-        console.print(f"[green]✓ {message}[/green]")
-    else:
-        console.print(f"[red]✗ {message}[/red]")
-
-
-@plugin.command("remove")
-@click.argument("name")
-def plugin_remove(name: str) -> None:
-    """Remove a plugin."""
-    from .plugins import get_plugin_manager
-
-    manager = get_plugin_manager()
-
-    success, message = manager.uninstall(name)
-
-    if success:
-        console.print(f"[green]✓ {message}[/green]")
-    else:
-        console.print(f"[red]✗ {message}[/red]")
-
-
-@plugin.command("status")
-@click.argument("name", required=False)
-def plugin_status(name: str | None) -> None:
-    """Show plugin status."""
-    from .plugins import get_plugin_manager
-
-    manager = get_plugin_manager()
-
-    if name:
-        p = manager.get(name)
-        if not p:
-            console.print(f"[red]Plugin '{name}' not found[/red]")
-            return
-
-        status = p.status()
-        console.print(f"[bold]{status['name']}[/bold] v{status['version']}")
+    if not qmd_integration.is_available():
+        console.print("[red]✗ qmd not installed[/red]")
         console.print()
-        for key, value in status.items():
-            if key not in ("name", "version"):
-                console.print(f"  {key}: {value}")
+        console.print("[dim]Install with:[/dim]")
+        console.print("  [cyan]bun install -g github:tobi/qmd[/cyan]")
+        return
+
+    console.print(f"[bold cyan]Setting up qmd for {project_path.name}[/bold cyan]")
+
+    with console.status("[cyan]Indexing and embedding...[/cyan]"):
+        result = qmd_integration.init_collection(
+            project_path,
+            collection_name=name,
+            mask=mask,
+            embed=True,
+        )
+
+    if result["success"]:
+        console.print(f"[green]✓ Created collection: {result['collection']}[/green]")
+        console.print(f"  Files: {result.get('files', '?')}")
+        console.print(f"  Chunks: {result.get('chunks', '?')}")
+
+        if qmd_integration.setup_mcp_config(project_path):
+            console.print("[green]✓ Created MCP config[/green]")
     else:
-        plugins = manager.all
-        for p in plugins:
-            status = p.status()
-            enabled = "[green]enabled[/green]" if status.get("enabled") else "[yellow]disabled[/yellow]"
-            console.print(f"[bold]{p.name}[/bold]: {enabled}")
+        console.print(f"[red]✗ Failed: {result.get('error')}[/red]")
+
+
+@qmd.command("search")
+@click.argument("query")
+@click.option("-n", "--limit", default=5, help="Number of results")
+@click.option("-c", "--collection", help="Filter to collection")
+@click.option("--semantic", "-s", is_flag=True, help="Use semantic search (default)")
+@click.option("--keyword", "-k", is_flag=True, help="Use keyword search instead")
+def qmd_search(query: str, limit: int, collection: str | None, semantic: bool, keyword: bool) -> None:
+    """Search project documents.
+
+    \\b
+    Examples:
+        adw qmd search "error handling"        # Semantic search
+        adw qmd search "config" -n 10          # More results
+        adw qmd search "api" -c myproject      # Specific collection
+        adw qmd search "TODO" --keyword        # Keyword search
+    """
+    from .integrations import qmd as qmd_integration
+
+    if not qmd_integration.is_available():
+        console.print("[red]✗ qmd not installed[/red]")
+        return
+
+    # Default to semantic search unless keyword flag is set
+    mode = "search" if keyword else "vsearch"
+    results = qmd_integration.search(query, collection, limit, mode=mode)
+
+    if not results:
+        console.print("[yellow]No results found[/yellow]")
+        return
+
+    console.print(f"[bold cyan]Results for: {query}[/bold cyan]")
+    console.print()
+
+    for i, doc in enumerate(results, 1):
+        doc_path = doc.get("path", doc.get("file", "unknown"))
+        snippet = doc.get("snippet", doc.get("text", ""))[:200]
+        score = doc.get("score", 0)
+
+        if doc_path.startswith("qmd://"):
+            doc_path = "/".join(doc_path.split("/")[3:])
+
+        score_str = f"{score * 100:.0f}%" if isinstance(score, float) else str(score)
+
+        console.print(f"[bold]{i}. {doc_path}[/bold] [dim]({score_str})[/dim]")
+        console.print(f"   [dim]{snippet}...[/dim]")
+        console.print()
+
+
+@qmd.command("update")
+@click.option("--pull", is_flag=True, help="Git pull before indexing")
+def qmd_update(pull: bool) -> None:
+    """Re-index all collections.
+
+    \\b
+    Examples:
+        adw qmd update                   # Re-index all
+        adw qmd update --pull            # Pull changes first
+    """
+    from .integrations import qmd as qmd_integration
+
+    if not qmd_integration.is_available():
+        console.print("[red]✗ qmd not installed[/red]")
+        return
+
+    with console.status("[cyan]Updating...[/cyan]"):
+        result = qmd_integration.update_index(pull=pull)
+
+    if result["success"]:
+        console.print("[green]✓ Index updated[/green]")
+    else:
+        console.print(f"[red]✗ Failed: {result.get('error')}[/red]")
 
 
 # =============================================================================
@@ -3271,6 +3311,7 @@ def checkpoints_cmd(task_id: str, as_json: bool) -> None:
 
     if as_json:
         import json
+
         output = [cp.to_dict() for cp in checkpoints]
         click.echo(json.dumps(output, indent=2))
         return
@@ -3379,6 +3420,7 @@ def resume_task_cmd(task_id: str, checkpoint: str | None, workflow: str) -> None
 
     if workflow == "simple":
         from .workflows.simple import run_simple_workflow
+
         success = run_simple_workflow(
             task_description=description,
             worktree_name=worktree_path,
@@ -3386,6 +3428,7 @@ def resume_task_cmd(task_id: str, checkpoint: str | None, workflow: str) -> None
         )
     elif workflow == "sdlc":
         from .workflows.sdlc import run_sdlc_workflow
+
         success = run_sdlc_workflow(
             task_description=description,
             worktree_name=worktree_path,
@@ -3393,6 +3436,7 @@ def resume_task_cmd(task_id: str, checkpoint: str | None, workflow: str) -> None
         )
     else:
         from .workflows.standard import run_standard_workflow
+
         success = run_standard_workflow(
             task_description=description,
             worktree_name=worktree_path,
@@ -3492,9 +3536,7 @@ def screenshot_cmd(
     # Check if server is running
     if not is_dev_server_running(port):
         console.print(f"[yellow]No server detected on port {port}[/yellow]")
-        console.print(
-            "[dim]Start a dev server first, or specify a different port with --port[/dim]"
-        )
+        console.print("[dim]Start a dev server first, or specify a different port with --port[/dim]")
         return
 
     # Determine output path
@@ -3507,6 +3549,7 @@ def screenshot_cmd(
 
     console.print(f"[dim]Waiting {delay}s for page to settle...[/dim]")
     import time
+
     time.sleep(delay)
 
     try:
@@ -3526,9 +3569,7 @@ def screenshot_cmd(
 
     except ImportError as e:
         console.print(f"[red]✗[/red] {e}")
-        console.print(
-            "[dim]Install with: pip install playwright && playwright install chromium[/dim]"
-        )
+        console.print("[dim]Install with: pip install playwright && playwright install chromium[/dim]")
     except RuntimeError as e:
         console.print(f"[red]✗[/red] Screenshot failed: {e}")
     except OSError as e:
@@ -4375,9 +4416,7 @@ def learn_show(domain: str | None, learning_type: str | None, limit: int, as_jso
 
     # Filter by domain
     if domain:
-        learnings = [
-            item for item in learnings if item.domain == domain or item.domain == "general"
-        ]
+        learnings = [item for item in learnings if item.domain == domain or item.domain == "general"]
 
     # Filter by type
     if learning_type:
@@ -4424,9 +4463,7 @@ def learn_show(domain: str | None, learning_type: str | None, limit: int, as_jso
 
     for type_name, type_learnings in by_type.items():
         icon = type_icons.get(type_name, "•")
-        console.print(
-            f"[bold]{icon} {type_name.replace('_', ' ').title()}s ({len(type_learnings)})[/bold]"
-        )
+        console.print(f"[bold]{icon} {type_name.replace('_', ' ').title()}s ({len(type_learnings)})[/bold]")
         for item in type_learnings:
             domain_tag = f" [dim][{item.domain}][/dim]" if item.domain != "general" else ""
             console.print(f"  - {item.content}{domain_tag}")
@@ -4662,6 +4699,7 @@ def plan_cmd(description: str | None, planner: str, show: bool) -> None:
         package_json = Path("package.json")
         if package_json.exists():
             import json
+
             pkg = json.loads(package_json.read_text())
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
             if "@supabase/supabase-js" in deps:
@@ -4730,7 +4768,7 @@ def plan_cmd(description: str | None, planner: str, show: bool) -> None:
         console.print()
 
         if not description:
-            console.print("[dim]Usage: adw plan \"<description>\" to run planning[/dim]")
+            console.print('[dim]Usage: adw plan "<description>" to run planning[/dim]')
             cmd = planner_commands[suggested_planner]
             console.print(f"[dim]  or use: {cmd} <description> in Claude Code[/dim]")
         return
@@ -5135,13 +5173,15 @@ def alerts() -> None:
 @click.argument("name")
 @click.argument("webhook_url")
 @click.option(
-    "--type", "-t",
+    "--type",
+    "-t",
     type=click.Choice(["slack", "discord"]),
     required=True,
     help="Channel type",
 )
 @click.option(
-    "--events", "-e",
+    "--events",
+    "-e",
     multiple=True,
     type=click.Choice(["task_start", "task_complete", "task_failed", "daily_summary", "weekly_digest"]),
     help="Events to notify on (default: all)",
@@ -5559,9 +5599,7 @@ def workspace_undepend(source: str, target: str) -> None:
 
     # Find and remove relationship
     original_count = len(ws.relationships)
-    ws.relationships = [
-        r for r in ws.relationships if not (r.source == source and r.target == target)
-    ]
+    ws.relationships = [r for r in ws.relationships if not (r.source == source and r.target == target)]
 
     if len(ws.relationships) < original_count:
         save_workspace(config, config_path)
@@ -5622,6 +5660,7 @@ def workflow_list(show_all: bool) -> None:
         if show_all:
             try:
                 from .workflows import load_workflow
+
                 wf = load_workflow(path)
                 phase_names = ", ".join(p.name for p in wf.phases)
                 console.print(f"{marker}[bold]{name}[/bold]{builtin_tag}")
@@ -5991,11 +6030,13 @@ def prompt_list(path: Path | None) -> None:
         search_paths.append(path)
     else:
         # Default locations
-        search_paths.extend([
-            Path.cwd() / "prompts",
-            Path.cwd() / ".claude" / "prompts",
-            Path.home() / ".adw" / "prompts",
-        ])
+        search_paths.extend(
+            [
+                Path.cwd() / "prompts",
+                Path.cwd() / ".claude" / "prompts",
+                Path.home() / ".adw" / "prompts",
+            ]
+        )
 
     found = []
     for search_path in search_paths:
@@ -6397,28 +6438,6 @@ def config_migrate(dry_run: bool) -> None:
         console.print("[dim]These are kept separate for workspace-specific settings.[/dim]")
     else:
         console.print("\n[red]Failed to save config[/red]")
-
-
-# =============================================================================
-# QMD Commands (via plugin, kept for backward compatibility)
-# =============================================================================
-
-def _register_plugin_commands():
-    """Register commands from enabled plugins."""
-    try:
-        from .plugins import get_plugin_manager
-        manager = get_plugin_manager()
-
-        for plugin in manager.enabled:
-            for cmd in plugin.get_commands():
-                main.add_command(cmd)
-    except Exception:
-        # Don't crash if plugin loading fails
-        pass
-
-
-# Register plugin commands at import time
-_register_plugin_commands()
 
 
 if __name__ == "__main__":

@@ -18,11 +18,22 @@ console = Console()
 
 # Files/folders to ignore when checking if project is empty
 IGNORE_FILES = {
-    '.git', '.gitignore', '.gitattributes',
-    'README.md', 'LICENSE', 'CHANGELOG.md',
-    '.adw', '.claude', '.vscode', '.idea',
-    'node_modules', '__pycache__', '.venv', 'venv',
-    '.DS_Store', 'Thumbs.db',
+    ".git",
+    ".gitignore",
+    ".gitattributes",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    ".adw",
+    ".claude",
+    ".vscode",
+    ".idea",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".DS_Store",
+    "Thumbs.db",
 }
 
 
@@ -44,7 +55,7 @@ def is_empty_project(path: Path) -> bool:
     return len(meaningful) < 2
 
 
-EMPTY_PROJECT_TEMPLATE = '''# CLAUDE.md
+EMPTY_PROJECT_TEMPLATE = """# CLAUDE.md
 
 ## Project Overview
 
@@ -99,7 +110,7 @@ This project uses ADW (AI Developer Workflow) for task orchestration.
 - `tasks.md` - Task tracking
 - `specs/` - Feature specifications
 - `.claude/commands/` - Slash commands
-'''
+"""
 
 
 def get_template_path(template_name: str) -> str:
@@ -448,24 +459,50 @@ def init_project(
     elif gitignore_result == "skipped":
         result["skipped"].append(".gitignore (already has ADW entries)")
 
-    # Dispatch to plugins for initialization
+    # Initialize QMD semantic search if available
     try:
-        from .plugins import get_plugin_manager
-        manager = get_plugin_manager()
+        from .integrations import qmd as qmd_integration
 
-        # Let plugins do their init (e.g., qmd will set up collections)
-        console.print("[dim]Running plugin initialization...[/dim]")
-        manager.dispatch_init(project_path)
+        if qmd_integration.is_available():
+            console.print("[dim]Setting up QMD semantic search...[/dim]")
 
-        # Check if qmd plugin did anything
-        qmd_plugin = manager.get("qmd")
-        if qmd_plugin and qmd_plugin.enabled:
-            status = qmd_plugin.status()
-            if status.get("available") and status.get("collections"):
-                result["created"].append("qmd semantic search")
+            # Get or generate collection name
+            collection = qmd_integration.get_collection_name(project_path)
+
+            # Check if collection already exists
+            status = qmd_integration.get_status()
+            if collection in status.get("collections", []):
+                # Already indexed, just update
+                qmd_integration.update_index()
+                result["updated"].append("qmd semantic search")
+            else:
+                # Initialize new collection
+                init_result = qmd_integration.init_collection(
+                    project_path,
+                    collection_name=collection,
+                    embed=True,
+                )
+
+                if init_result["success"]:
+                    # Add context description from CLAUDE.md
+                    claude_md = project_path / "CLAUDE.md"
+                    if claude_md.exists():
+                        content = claude_md.read_text()
+                        lines = content.split("\n")
+                        context = ""
+                        for line in lines[1:10]:
+                            if line.strip() and not line.startswith("#"):
+                                context = line.strip()[:100]
+                                break
+                        if context:
+                            qmd_integration.add_context(collection, context)
+
+                    # Set up MCP config for Claude Code
+                    qmd_integration.setup_mcp_config(project_path)
+                    result["created"].append("qmd semantic search")
     except Exception as e:
-        # Don't fail init if plugins have issues
-        console.print(f"[dim]Plugin init warning: {e}[/dim]")
+        # Don't fail init if QMD has issues
+        console.print(f"[dim]QMD init warning: {e}[/dim]")
 
     return result
 
@@ -536,4 +573,4 @@ def print_init_summary(result: dict[str, list[str]]) -> None:
     console.print("Next steps:")
     console.print("  1. Review the generated CLAUDE.md")
     console.print("  2. Run [cyan]adw[/cyan] to open the dashboard")
-    console.print("  3. Run [cyan]adw new \"your feature\"[/cyan] to start planning")
+    console.print('  3. Run [cyan]adw new "your feature"[/cyan] to start planning')
