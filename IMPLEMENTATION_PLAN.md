@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 10 (Workflow Customization)
-**Version:** 0.5.20
-**Status:** Phase 7 COMPLETE - Linear integration complete (P7-6, P7-7). Total: 1136 tests passing (49 new Linear tests). Code quality: all ruff lint and mypy errors fixed.
+**Version:** 0.5.21
+**Status:** Phase 10 IN PROGRESS - Workflow DSL and CLI complete (P10-1 through P10-5). Total: 1193 tests passing (57 new workflow DSL tests). Code quality: all ruff lint checks pass.
 
 ---
 
@@ -25,7 +25,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 7 - Entry Points | **COMPLETE** | **100%** |
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
-| 10 - Customization | Partial | 20% |
+| 10 - Customization | **IN PROGRESS** | **60%** |
 | 11 - Simplification | Not Started | 0% |
 
 **Existing Strengths:**
@@ -1219,35 +1219,70 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-10/customization.md`
-**Status:** 20% Complete (workflows exist)
+**Status:** 60% Complete - Core DSL and CLI implemented
 
 ### What Exists
 - Simple, standard, sdlc workflows in `src/adw/workflows/`
 - Prototype configs in `prototype.py` (no execution)
 - Workflow phases in `src/adw/workflow/phases.py`
+- **NEW:** Complete workflow DSL (`src/adw/workflows/dsl.py`)
+  - `WorkflowDefinition` and `PhaseDefinition` dataclasses
+  - YAML parsing with `parse_workflow_yaml()`, `load_workflow()`, `save_workflow()`
+  - PhaseCondition enum: ALWAYS, HAS_CHANGES, TESTS_PASSED, TESTS_FAILED, FILE_EXISTS, ENV_SET
+  - LoopCondition enum: NONE, UNTIL_SUCCESS, UNTIL_TESTS_PASS, FIXED_COUNT
+- **NEW:** Prompt templating (`PromptTemplate` class)
+  - Variable substitution: `{{variable_name}}`
+  - Include directives: `{{include path/to/file.md}}`
+  - Conditional blocks: `{{#if condition}}...{{/if}}`
+- **NEW:** Built-in workflows stored in `src/adw/workflows/builtin/`
+  - `sdlc.yaml` - Full SDLC workflow
+  - `simple.yaml` - Quick build-only workflow
+  - `prototype.yaml` - Rapid prototyping workflow
+  - `bug-fix.yaml` - Focused bug fixing workflow
+- **NEW:** Workflow library management
+  - User workflows in `~/.adw/workflows/`
+  - `list_workflows()`, `get_workflow()`, `create_workflow()`, `delete_workflow()`
+  - `set_active_workflow()`, `get_active_workflow_name()`
+- **NEW:** CLI commands
+  - `adw workflow list [--all]` - List available workflows
+  - `adw workflow show <name> [--yaml]` - Show workflow details
+  - `adw workflow use <name>` - Set default workflow
+  - `adw workflow create <name> [--from] [--description] [--force]` - Create new workflow
+  - `adw workflow delete <name> [-y]` - Delete user workflow
+  - `adw workflow validate <path>` - Validate workflow YAML
+  - `adw prompt create <name> [--template] [--output]` - Create prompt template
+  - `adw prompt list [--path]` - List prompt templates
+- **NEW:** 57 tests for workflow DSL (`tests/test_workflow_dsl.py`)
 
 ### Tasks
 
-- [ ] **P10-1** Create `src/adw/workflows/dsl.py`
+- [x] **P10-1** Create `src/adw/workflows/dsl.py`
   - YAML-based workflow definitions
   - Each phase: name, prompt file, model, test commands
   - Store in `~/.adw/workflows/`
   - Load-time validation
+  - **Files:** `src/adw/workflows/dsl.py` (715 lines)
 
-- [ ] **P10-2** Add custom phase support
-  - Add, remove, reorder phases
-  - Conditional phases: `if: tests_failed`
-  - Parallel execution, loop with `while: not_done`
+- [x] **P10-2** Add custom phase support
+  - Add, remove, reorder phases (via YAML)
+  - Conditional phases: `condition: tests_failed`, `condition: has_changes`
+  - Loop phases: `loop: until_tests_pass`, `loop: until_success`
+  - Parallel execution: `parallel_with: [phase_name]` (defined, not yet executed)
+  - **Files:** `src/adw/workflows/dsl.py` (PhaseCondition, LoopCondition enums)
 
-- [ ] **P10-3** Implement prompt templating
+- [x] **P10-3** Implement prompt templating
   - Template variables: `{{task_description}}`
   - Include mechanism: `{{include common/safety.md}}`
+  - Conditional blocks: `{{#if show_extra}}...{{/if}}`
+  - **Files:** `src/adw/workflows/dsl.py` (PromptTemplate class)
 
-- [ ] **P10-4** Add `adw prompt create <name>` CLI
+- [x] **P10-4** Add `adw prompt create <name>` CLI
+  - **Files:** `src/adw/cli.py` (prompt command group)
 
-- [ ] **P10-5** Build workflow library
+- [x] **P10-5** Build workflow library
   - Ship with: `sdlc`, `simple`, `prototype`, `bug-fix`
-  - CLI: `adw workflow list`, `adw workflow use <name>`
+  - CLI: `adw workflow list`, `adw workflow use <name>`, `adw workflow show`, etc.
+  - **Files:** `src/adw/workflows/dsl.py`, `src/adw/cli.py`
 
 - [ ] **P10-6** Add task configuration
   - Per-task workflow overrides (YAML)
@@ -1257,6 +1292,11 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 - [ ] **P10-7** Implement prototype workflow execution
   - Currently `prototype.py` is config only
   - Add `run_prototype_workflow()` function
+
+- [ ] **P10-8** Wire DSL workflows into execution engine
+  - Connect WorkflowDefinition to run_sdlc_workflow
+  - Implement conditional phase execution
+  - Implement loop phase execution
 
 ---
 

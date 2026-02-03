@@ -3,5 +3,5 @@
 Orchestrate Claude Code for any project.
 """
 
-__version__ = "0.5.19"
+__version__ = "0.5.21"
 __author__ = "StudiBudi"

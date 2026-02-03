@@ -5549,6 +5549,438 @@ def workspace_undepend(source: str, target: str) -> None:
 
 
 # =============================================================================
+# Workflow Commands
+# =============================================================================
+
+
+@main.group()
+def workflow() -> None:
+    """Manage workflow definitions.
+
+    Workflows define the phases and execution order for tasks.
+    Custom workflows can be created in ~/.adw/workflows/.
+
+    \\b
+    Examples:
+        adw workflow list           # List available workflows
+        adw workflow show sdlc      # Show workflow details
+        adw workflow use sdlc       # Set default workflow
+        adw workflow create myflow  # Create new workflow
+    """
+    pass
+
+
+@workflow.command("list")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show all details")
+def workflow_list(show_all: bool) -> None:
+    """List available workflows.
+
+    \\b
+    Examples:
+        adw workflow list
+        adw workflow list --all
+    """
+    from .workflows import get_active_workflow_name, list_workflows
+
+    workflows = list_workflows()
+    active = get_active_workflow_name()
+
+    if not workflows:
+        console.print("[yellow]No workflows found[/yellow]")
+        console.print("Create one with: adw workflow create <name>")
+        return
+
+    console.print("[bold]Available Workflows[/bold]\n")
+
+    for name, path, is_builtin in workflows:
+        # Marker for active workflow
+        marker = "[cyan]→[/cyan] " if name == active else "  "
+        builtin_tag = " [dim](built-in)[/dim]" if is_builtin else ""
+
+        if show_all:
+            try:
+                from .workflows import load_workflow
+                wf = load_workflow(path)
+                phase_names = ", ".join(p.name for p in wf.phases)
+                console.print(f"{marker}[bold]{name}[/bold]{builtin_tag}")
+                console.print(f"    {wf.description or 'No description'}")
+                console.print(f"    Phases: {phase_names}")
+                console.print()
+            except Exception as e:
+                console.print(f"{marker}[bold]{name}[/bold]{builtin_tag} [red](error: {e})[/red]")
+        else:
+            console.print(f"{marker}[bold]{name}[/bold]{builtin_tag}")
+
+    if active:
+        console.print(f"\n[dim]Active workflow: {active}[/dim]")
+
+
+@workflow.command("show")
+@click.argument("name")
+@click.option("--yaml", "as_yaml", is_flag=True, help="Show raw YAML")
+def workflow_show(name: str, as_yaml: bool) -> None:
+    """Show workflow details.
+
+    \\b
+    Examples:
+        adw workflow show sdlc
+        adw workflow show my-workflow --yaml
+    """
+    from .workflows import get_workflow, serialize_workflow
+
+    wf = get_workflow(name)
+    if not wf:
+        console.print(f"[red]Workflow not found: {name}[/red]")
+        console.print("Use 'adw workflow list' to see available workflows")
+        return
+
+    if as_yaml:
+        yaml_content = serialize_workflow(wf)
+        console.print(yaml_content)
+        return
+
+    console.print(f"[bold]Workflow: {wf.name}[/bold]")
+    console.print(f"Version: {wf.version}")
+    if wf.description:
+        console.print(f"Description: {wf.description}")
+    if wf.author:
+        console.print(f"Author: {wf.author}")
+    if wf.tags:
+        console.print(f"Tags: {', '.join(wf.tags)}")
+
+    console.print(f"\nDefault model: {wf.default_model}")
+    console.print(f"Default timeout: {wf.default_timeout}s")
+    console.print(f"Fail fast: {wf.fail_fast}")
+
+    console.print("\n[bold]Phases:[/bold]")
+    for i, phase in enumerate(wf.phases, 1):
+        required = "[green]required[/green]" if phase.required else "[dim]optional[/dim]"
+        model = f"[cyan]{phase.model}[/cyan]"
+
+        console.print(f"\n  {i}. [bold]{phase.name}[/bold] ({required}, {model})")
+
+        # Show prompt (truncated)
+        prompt_preview = phase.prompt[:60] + "..." if len(phase.prompt) > 60 else phase.prompt
+        prompt_preview = prompt_preview.replace("\n", " ")
+        console.print(f"     Prompt: [dim]{prompt_preview}[/dim]")
+
+        if phase.timeout_seconds != wf.default_timeout:
+            console.print(f"     Timeout: {phase.timeout_seconds}s")
+        if phase.tests:
+            console.print(f"     Tests: {phase.tests}")
+        if phase.condition.value != "always":
+            cond = phase.condition.value
+            if phase.condition_value:
+                cond += f":{phase.condition_value}"
+            console.print(f"     Condition: {cond}")
+        if phase.loop.value != "none":
+            console.print(f"     Loop: {phase.loop.value} (max {phase.loop_max})")
+
+
+@workflow.command("use")
+@click.argument("name")
+def workflow_use(name: str) -> None:
+    """Set the default workflow.
+
+    \\b
+    Examples:
+        adw workflow use sdlc
+        adw workflow use my-workflow
+    """
+    from .workflows import set_active_workflow
+
+    try:
+        set_active_workflow(name)
+        console.print(f"[green]✓ Active workflow set to: {name}[/green]")
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+@workflow.command("create")
+@click.argument("name")
+@click.option("--description", "-d", help="Workflow description")
+@click.option("--from", "from_workflow", help="Copy from existing workflow")
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing workflow")
+def workflow_create(
+    name: str,
+    description: str | None,
+    from_workflow: str | None,
+    force: bool,
+) -> None:
+    """Create a new workflow.
+
+    Creates a new workflow definition in ~/.adw/workflows/.
+
+    \\b
+    Examples:
+        adw workflow create my-workflow
+        adw workflow create my-workflow --from sdlc
+        adw workflow create my-workflow -d "My custom workflow"
+    """
+    from .workflows import (
+        WorkflowDefinition,
+        create_workflow,
+        get_workflow,
+        get_workflows_dir,
+        save_workflow,
+    )
+
+    # Check if copying from existing
+    if from_workflow:
+        source = get_workflow(from_workflow)
+        if not source:
+            console.print(f"[red]Source workflow not found: {from_workflow}[/red]")
+            return
+
+        # Create copy with new name
+        new_wf = WorkflowDefinition(
+            name=name,
+            phases=source.phases,
+            description=description or f"Based on {from_workflow}",
+            version="1.0.0",
+            default_model=source.default_model,
+            default_timeout=source.default_timeout,
+            default_max_retries=source.default_max_retries,
+            fail_fast=source.fail_fast,
+            skip_optional_on_failure=source.skip_optional_on_failure,
+        )
+
+        path = get_workflows_dir() / f"{name}.yaml"
+        if path.exists() and not force:
+            console.print(f"[red]Workflow already exists: {name}[/red]")
+            console.print("Use --force to overwrite")
+            return
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_workflow(new_wf, path)
+        console.print(f"[green]✓ Created workflow: {name}[/green]")
+        console.print(f"[dim]   Location: {path}[/dim]")
+        return
+
+    # Create minimal workflow
+    try:
+        phases = [
+            {"name": "plan", "prompt": "/plan {{task_description}}", "model": "opus"},
+            {"name": "implement", "prompt": "/implement {{task_description}}", "model": "sonnet"},
+        ]
+        path = create_workflow(
+            name=name,
+            phases=phases,
+            description=description or "",
+            overwrite=force,
+        )
+        console.print(f"[green]✓ Created workflow: {name}[/green]")
+        console.print(f"[dim]   Location: {path}[/dim]")
+        console.print("\nEdit the YAML file to customize phases.")
+    except FileExistsError:
+        console.print(f"[red]Workflow already exists: {name}[/red]")
+        console.print("Use --force to overwrite")
+
+
+@workflow.command("delete")
+@click.argument("name")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def workflow_delete(name: str, yes: bool) -> None:
+    """Delete a user-defined workflow.
+
+    Built-in workflows cannot be deleted.
+
+    \\b
+    Examples:
+        adw workflow delete my-workflow
+        adw workflow delete my-workflow -y
+    """
+    from .workflows import delete_workflow
+
+    if not yes:
+        if not click.confirm(f"Delete workflow '{name}'?"):
+            return
+
+    try:
+        if delete_workflow(name):
+            console.print(f"[green]✓ Deleted workflow: {name}[/green]")
+        else:
+            console.print(f"[yellow]Workflow not found: {name}[/yellow]")
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+@workflow.command("validate")
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+def workflow_validate(path: Path) -> None:
+    """Validate a workflow YAML file.
+
+    \\b
+    Examples:
+        adw workflow validate my-workflow.yaml
+    """
+    from .workflows import load_workflow
+
+    try:
+        wf = load_workflow(path)
+        console.print(f"[green]✓ Valid workflow: {wf.name}[/green]")
+        console.print(f"  Phases: {len(wf.phases)}")
+        console.print(f"  Required: {len(wf.get_required_phases())}")
+        console.print(f"  Optional: {len(wf.get_optional_phases())}")
+    except Exception as e:
+        console.print(f"[red]✗ Invalid workflow: {e}[/red]")
+        sys.exit(1)
+
+
+# =============================================================================
+# Prompt Commands
+# =============================================================================
+
+
+@main.group()
+def prompt() -> None:
+    """Manage prompt templates.
+
+    Prompt templates are used by workflows to define agent behavior.
+
+    \\b
+    Examples:
+        adw prompt create my-prompt
+        adw prompt list
+        adw prompt show plan
+    """
+    pass
+
+
+@prompt.command("create")
+@click.argument("name")
+@click.option("--template", "-t", help="Base template (plan, implement, test, review)")
+@click.option("--output", "-o", type=click.Path(path_type=Path), help="Output path")
+def prompt_create(name: str, template: str | None, output: Path | None) -> None:
+    """Create a new prompt template.
+
+    \\b
+    Examples:
+        adw prompt create my-plan --template plan
+        adw prompt create custom-review -o prompts/review.md
+    """
+    templates = {
+        "plan": """# Plan Phase
+
+Create a detailed implementation plan for:
+{{task_description}}
+
+## Requirements
+- Break down into clear steps
+- Identify potential challenges
+- Consider edge cases
+
+## Output
+Provide a numbered list of implementation steps.
+""",
+        "implement": """# Implement Phase
+
+Implement the following:
+{{task_description}}
+
+## Guidelines
+- Follow existing code patterns
+- Add appropriate error handling
+- Include basic tests
+
+## Constraints
+- Make minimal, focused changes
+- Don't modify unrelated code
+""",
+        "test": """# Test Phase
+
+Create tests for:
+{{task_description}}
+
+## Requirements
+- Cover happy path
+- Include edge cases
+- Test error conditions
+""",
+        "review": """# Review Phase
+
+Review the implementation of:
+{{task_description}}
+
+## Checklist
+- [ ] Code follows project conventions
+- [ ] Error handling is appropriate
+- [ ] Tests cover key scenarios
+- [ ] Documentation is updated
+""",
+    }
+
+    # Get base content
+    if template and template in templates:
+        content = templates[template]
+    else:
+        content = f"""# {name.title()} Prompt
+
+{{{{task_description}}}}
+
+## Instructions
+Add your instructions here.
+"""
+
+    # Determine output path
+    if output:
+        path = output
+    else:
+        path = Path.cwd() / "prompts" / f"{name}.md"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists():
+        console.print(f"[red]File already exists: {path}[/red]")
+        return
+
+    path.write_text(content, encoding="utf-8")
+    console.print(f"[green]✓ Created prompt template: {path}[/green]")
+
+
+@prompt.command("list")
+@click.option("--path", "-p", type=click.Path(path_type=Path), help="Directory to search")
+def prompt_list(path: Path | None) -> None:
+    """List prompt templates.
+
+    \\b
+    Examples:
+        adw prompt list
+        adw prompt list -p prompts/
+    """
+    search_paths = []
+
+    if path:
+        search_paths.append(path)
+    else:
+        # Default locations
+        search_paths.extend([
+            Path.cwd() / "prompts",
+            Path.cwd() / ".claude" / "prompts",
+            Path.home() / ".adw" / "prompts",
+        ])
+
+    found = []
+    for search_path in search_paths:
+        if search_path.exists():
+            for p in search_path.glob("*.md"):
+                found.append((p.stem, p, search_path))
+
+    if not found:
+        console.print("[yellow]No prompt templates found[/yellow]")
+        console.print("Create one with: adw prompt create <name>")
+        return
+
+    console.print("[bold]Prompt Templates[/bold]\n")
+    current_dir = None
+    for name, file_path, dir_path in sorted(found, key=lambda x: (str(x[2]), x[0])):
+        if dir_path != current_dir:
+            current_dir = dir_path
+            console.print(f"[dim]{dir_path}/[/dim]")
+        console.print(f"  [bold]{name}[/bold]")
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 

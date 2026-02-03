@@ -1,0 +1,20 @@
+name: simple
+description: Quick build-only workflow for simple tasks
+version: "1.0.0"
+author: ADW
+tags: [quick, simple]
+
+default_model: sonnet
+default_timeout: 600
+fail_fast: true
+
+phases:
+  - name: build
+    prompt: |
+      Build the following:
+      {{task_description}}
+
+      Execute the task directly without planning.
+    model: sonnet
+    required: true
+    timeout: 900

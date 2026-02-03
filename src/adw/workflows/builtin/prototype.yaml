@@ -1,0 +1,30 @@
+name: prototype
+description: Rapid prototyping workflow
+version: "1.0.0"
+author: ADW
+tags: [prototype, rapid, scaffolding]
+
+default_model: sonnet
+default_timeout: 600
+fail_fast: false
+
+phases:
+  - name: scaffold
+    prompt: |
+      Create a quick prototype for:
+      {{task_description}}
+
+      Focus on speed over perfection. Create working code quickly.
+    model: sonnet
+    required: true
+    timeout: 600
+
+  - name: verify
+    prompt: |
+      Verify the prototype works:
+      {{task_description}}
+
+      Run any available tests or manual verification.
+    model: haiku
+    required: false
+    timeout: 300

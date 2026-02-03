@@ -1,0 +1,50 @@
+name: sdlc
+description: Full Software Development Lifecycle workflow
+version: "1.0.0"
+author: ADW
+tags: [development, testing, review]
+
+default_model: sonnet
+default_timeout: 600
+fail_fast: true
+
+phases:
+  - name: plan
+    prompt: /plan {{task_description}}
+    model: opus
+    required: true
+    timeout: 900
+
+  - name: implement
+    prompt: /implement {{task_description}}
+    model: sonnet
+    required: true
+    timeout: 1200
+    loop: until_tests_pass
+    loop_max: 3
+
+  - name: test
+    prompt: /test {{task_description}}
+    model: sonnet
+    required: true
+    timeout: 600
+    tests: "auto"
+
+  - name: review
+    prompt: /review {{task_description}}
+    model: opus
+    required: true
+    timeout: 600
+
+  - name: document
+    prompt: /document {{task_description}}
+    model: haiku
+    required: false
+    timeout: 300
+
+  - name: release
+    prompt: /release {{task_description}}
+    model: sonnet
+    required: false
+    timeout: 300
+    condition: has_changes

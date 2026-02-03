@@ -1,0 +1,55 @@
+name: bug-fix
+description: Focused bug fixing workflow
+version: "1.0.0"
+author: ADW
+tags: [bugfix, debugging, maintenance]
+
+default_model: sonnet
+default_timeout: 600
+fail_fast: true
+
+phases:
+  - name: investigate
+    prompt: |
+      Investigate the following bug:
+      {{task_description}}
+
+      1. Reproduce the issue
+      2. Identify the root cause
+      3. Document your findings
+    model: opus
+    required: true
+    timeout: 600
+
+  - name: fix
+    prompt: |
+      Fix the bug based on your investigation:
+      {{task_description}}
+
+      Make minimal, targeted changes to fix the issue.
+    model: sonnet
+    required: true
+    timeout: 900
+    loop: until_tests_pass
+    loop_max: 3
+
+  - name: verify
+    prompt: |
+      Verify the fix:
+      {{task_description}}
+
+      Run tests and confirm the bug is resolved.
+    model: sonnet
+    required: true
+    timeout: 600
+    tests: "auto"
+
+  - name: document
+    prompt: |
+      Document the fix:
+      {{task_description}}
+
+      Add comments explaining the fix and why it was needed.
+    model: haiku
+    required: false
+    timeout: 300
