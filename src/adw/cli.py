@@ -1311,6 +1311,345 @@ def github_fix_comments(pr_number: int, fix_all: bool, dry_run: bool) -> None:
             console.print(f"[red]✗ Failed: {result.error_message}[/red]")
 
 
+# ============== PR Linking Commands (Multi-Repo) ==============
+
+
+@main.group("pr")
+def pr() -> None:
+    """Commands for managing linked PRs across repositories.
+
+    Enables coordinated changes across multiple repos with atomic merge support.
+
+    \\b
+    Examples:
+        adw pr link owner/repo#1 owner/other#2   # Link PRs
+        adw pr list                               # List link groups
+        adw pr show abc123                        # Show link group details
+        adw pr merge abc123                       # Merge all PRs in group
+        adw pr unlink abc123                      # Cancel link group
+    """
+    pass
+
+
+@pr.command("link")
+@click.argument("prs", nargs=-1, required=True)
+@click.option(
+    "--description",
+    "-d",
+    default="",
+    help="Description of the linked changes",
+)
+@click.option(
+    "--no-atomic",
+    is_flag=True,
+    help="Disable atomic merge (allow partial merges)",
+)
+def pr_link(prs: tuple[str, ...], description: str, no_atomic: bool) -> None:
+    """Link multiple PRs for coordinated changes.
+
+    Links PRs across repositories for coordinated merging. By default,
+    uses atomic merge strategy (all PRs merge together or none).
+
+    \\b
+    PR references can be:
+      - Full URL: https://github.com/owner/repo/pull/123
+      - Short form: owner/repo#123
+      - Local (current repo): #123
+
+    \\b
+    Examples:
+        adw pr link owner/frontend#10 owner/backend#20
+        adw pr link #15 #16 --description "Feature X across services"
+        adw pr link #1 #2 --no-atomic
+    """
+    from .github import create_link_group
+
+    if len(prs) < 2:
+        console.print("[red]At least 2 PRs required for linking[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[bold cyan]Linking {len(prs)} PRs...[/bold cyan]")
+    console.print()
+
+    for pr_ref in prs:
+        console.print(f"  • {pr_ref}")
+    console.print()
+
+    group = create_link_group(
+        pr_refs=list(prs),
+        description=description,
+        atomic=not no_atomic,
+    )
+
+    if not group:
+        console.print("[red]Failed to create link group[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[green]✓ Created link group: {group.id}[/green]")
+    console.print()
+    console.print("[bold]Linked PRs:[/bold]")
+    for linked_pr in group.prs:
+        status = "✓ approved" if linked_pr.approved else "○ pending review"
+        console.print(f"  [{status}] {linked_pr.full_name}: {linked_pr.title}")
+
+    if group.atomic:
+        console.print()
+        console.print("[yellow]⚠️  Atomic merge enabled - all PRs will be merged together[/yellow]")
+
+    console.print()
+    console.print(f"[dim]Use 'adw pr merge {group.id}' to merge all PRs[/dim]")
+    console.print(f"[dim]Use 'adw pr show {group.id}' to see status[/dim]")
+
+
+@pr.command("list")
+@click.option(
+    "--all",
+    "-a",
+    "include_all",
+    is_flag=True,
+    help="Include completed/cancelled groups",
+)
+def pr_list(include_all: bool) -> None:
+    """List all PR link groups.
+
+    \\b
+    Examples:
+        adw pr list           # Active groups only
+        adw pr list --all     # Include completed groups
+    """
+    from .github import list_link_groups
+
+    groups = list_link_groups(include_completed=include_all)
+
+    if not groups:
+        console.print("[yellow]No PR link groups found[/yellow]")
+        return
+
+    console.print(f"[bold]PR Link Groups ({len(groups)}):[/bold]")
+    console.print()
+
+    for group in groups:
+        status_color = {
+            "pending": "yellow",
+            "ready": "green",
+            "partial": "orange3",
+            "merged": "blue",
+            "failed": "red",
+            "cancelled": "dim",
+        }.get(group.status.value, "white")
+
+        console.print(f"[bold]{group.id}[/bold] [{status_color}]{group.status.value}[/]")
+        if group.description:
+            console.print(f"  [dim]{group.description}[/dim]")
+        console.print(f"  PRs: {len(group.prs)} | Atomic: {'Yes' if group.atomic else 'No'}")
+        for linked_pr in group.prs:
+            console.print(f"    • {linked_pr.full_name}")
+        console.print()
+
+
+@pr.command("show")
+@click.argument("group_id")
+@click.option(
+    "--refresh",
+    "-r",
+    is_flag=True,
+    help="Refresh PR status from GitHub",
+)
+def pr_show(group_id: str, refresh: bool) -> None:
+    """Show details of a PR link group.
+
+    \\b
+    Examples:
+        adw pr show abc123
+        adw pr show abc123 --refresh
+    """
+    from .github import get_link_group, refresh_link_group
+
+    if refresh:
+        group = refresh_link_group(group_id)
+    else:
+        group = get_link_group(group_id)
+
+    if not group:
+        console.print(f"[red]Link group not found: {group_id}[/red]")
+        raise SystemExit(1)
+
+    status_color = {
+        "pending": "yellow",
+        "ready": "green",
+        "partial": "orange3",
+        "merged": "blue",
+        "failed": "red",
+        "cancelled": "dim",
+    }.get(group.status.value, "white")
+
+    console.print(f"[bold]Link Group: {group.id}[/bold]")
+    console.print(f"Status: [{status_color}]{group.status.value}[/]")
+    if group.description:
+        console.print(f"Description: {group.description}")
+    console.print(f"Atomic Merge: {'Yes' if group.atomic else 'No'}")
+    if group.created_at:
+        console.print(f"Created: {group.created_at.isoformat()}")
+    if group.updated_at:
+        console.print(f"Updated: {group.updated_at.isoformat()}")
+    console.print()
+
+    console.print("[bold]Pull Requests:[/bold]")
+    for linked_pr in group.prs:
+        state_icon = {"open": "○", "merged": "✓", "closed": "✗"}.get(linked_pr.state, "?")
+        state_color = {"open": "yellow", "merged": "green", "closed": "red"}.get(
+            linked_pr.state, "white"
+        )
+
+        approved_str = " [green]approved[/green]" if linked_pr.approved else ""
+        mergeable_str = ""
+        if linked_pr.state == "open":
+            if linked_pr.mergeable:
+                mergeable_str = " [green]mergeable[/green]"
+            elif linked_pr.mergeable is False:
+                mergeable_str = " [red]conflicts[/red]"
+
+        console.print(
+            f"  [{state_color}]{state_icon}[/] {linked_pr.full_name}{approved_str}{mergeable_str}"
+        )
+        console.print(f"    {linked_pr.title}")
+        console.print(f"    [dim]{linked_pr.url}[/dim]")
+
+    if group.status == "ready":
+        console.print()
+        console.print("[green]✓ All PRs ready to merge[/green]")
+        console.print(f"[dim]Use 'adw pr merge {group.id}' to merge[/dim]")
+    elif group.status == "pending":
+        not_ready = [
+            pr.full_name
+            for pr in group.prs
+            if not (pr.state == "open" and pr.approved and pr.mergeable)
+        ]
+        if not_ready:
+            console.print()
+            console.print("[yellow]Not ready for merge:[/yellow]")
+            for name in not_ready:
+                console.print(f"  • {name}")
+
+
+@pr.command("merge")
+@click.argument("group_id")
+@click.option(
+    "--method",
+    "-m",
+    type=click.Choice(["squash", "merge", "rebase"]),
+    default="squash",
+    help="Merge method (default: squash)",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Force merge even if not all PRs are ready",
+)
+def pr_merge(group_id: str, method: str, force: bool) -> None:
+    """Merge all PRs in a link group.
+
+    Uses atomic merge strategy by default - if any PR fails to merge,
+    attempts to revert already-merged PRs.
+
+    \\b
+    Examples:
+        adw pr merge abc123
+        adw pr merge abc123 --method merge
+        adw pr merge abc123 --force
+    """
+    from .github import merge_link_group, refresh_link_group
+
+    console.print(f"[bold cyan]Merging link group: {group_id}[/bold cyan]")
+    console.print()
+
+    # Refresh status first
+    group = refresh_link_group(group_id)
+    if not group:
+        console.print(f"[red]Link group not found: {group_id}[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[bold]PRs to merge ({len(group.prs)}):[/bold]")
+    for linked_pr in group.prs:
+        console.print(f"  • {linked_pr.full_name}: {linked_pr.title}")
+    console.print()
+
+    if not group.is_ready() and not force:
+        console.print("[yellow]Not all PRs are ready for merge.[/yellow]")
+        console.print("Use --force to merge anyway (not recommended for atomic)")
+        raise SystemExit(1)
+
+    if group.atomic:
+        console.print("[yellow]⚠️  Atomic merge: will attempt rollback on failure[/yellow]")
+        console.print()
+
+    if not click.confirm("Proceed with merge?"):
+        return
+
+    result = merge_link_group(group_id, method=method, force=force)
+
+    console.print()
+    if result.success:
+        console.print("[green]✓ All PRs merged successfully[/green]")
+        for name in result.merged_prs:
+            console.print(f"  ✓ {name}")
+    else:
+        console.print(f"[red]✗ Merge failed: {result.error}[/red]")
+        if result.merged_prs:
+            console.print("[yellow]Merged before failure:[/yellow]")
+            for name in result.merged_prs:
+                console.print(f"  ✓ {name}")
+        if result.failed_prs:
+            console.print("[red]Failed to merge:[/red]")
+            for name in result.failed_prs:
+                console.print(f"  ✗ {name}")
+        if result.rolled_back:
+            console.print()
+            console.print("[yellow]⚠️  Rollback attempted - check PR status manually[/yellow]")
+
+
+@pr.command("unlink")
+@click.argument("group_id")
+@click.option(
+    "--confirm",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation",
+)
+def pr_unlink(group_id: str, confirm: bool) -> None:
+    """Cancel a PR link group.
+
+    Removes the link between PRs. PRs themselves are not affected
+    and can be merged independently.
+
+    \\b
+    Examples:
+        adw pr unlink abc123
+        adw pr unlink abc123 -y
+    """
+    from .github import get_link_group, unlink_prs
+
+    group = get_link_group(group_id)
+    if not group:
+        console.print(f"[red]Link group not found: {group_id}[/red]")
+        raise SystemExit(1)
+
+    console.print(f"[bold]Unlinking group: {group.id}[/bold]")
+    console.print(f"PRs: {', '.join(pr.full_name for pr in group.prs)}")
+    console.print()
+
+    if not confirm and not click.confirm("Cancel this link group?"):
+        return
+
+    if unlink_prs(group_id):
+        console.print("[green]✓ Link group cancelled[/green]")
+        console.print("[dim]PRs can now be merged independently[/dim]")
+    else:
+        console.print("[red]Failed to cancel link group[/red]")
+        raise SystemExit(1)
+
+
 # ============== Human-in-the-Loop Approval Commands ==============
 
 
@@ -3906,6 +4245,339 @@ def notify_enable(on: bool) -> None:
     enable_notifications(on)
     status = "enabled" if on else "disabled"
     console.print(f"[green]✓ Notifications {status}[/green]")
+
+
+# =============================================================================
+# Workspace Commands (Phase 6: Multi-Repo Orchestration)
+# =============================================================================
+
+
+@main.group()
+def workspace() -> None:
+    """Multi-repo workspace management.
+
+    Manage workspaces that coordinate multiple repositories,
+    enabling cross-repo task orchestration and dependencies.
+    """
+    pass
+
+
+@workspace.command("init")
+@click.argument("name", default="default")
+@click.option("--description", "-d", default="", help="Workspace description")
+def workspace_init(name: str, description: str) -> None:
+    """Initialize a new workspace.
+
+    Creates a workspace configuration to manage multiple repositories.
+    Workspace configs are stored in ~/.adw/workspace.toml.
+
+    \\b
+    Examples:
+        adw workspace init                  # Create 'default' workspace
+        adw workspace init myproject        # Create named workspace
+        adw workspace init myproject -d "Main project workspace"
+    """
+    from .workspace import get_workspace_config_path, init_workspace
+
+    config_path = get_workspace_config_path()
+    ws = init_workspace(name, description, config_path)
+
+    console.print(f"[green]✓ Workspace '{ws.name}' initialized[/green]")
+    if ws.description:
+        console.print(f"[dim]Description: {ws.description}[/dim]")
+    console.print()
+    console.print(f"[dim]Config: {config_path}[/dim]")
+    console.print()
+    console.print("[dim]Next steps:[/dim]")
+    console.print("[dim]  adw workspace add <path>   # Add a repository[/dim]")
+    console.print("[dim]  adw workspace list         # List repos in workspace[/dim]")
+
+
+@workspace.command("add")
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option("--name", "-n", default=None, help="Repository name (default: directory name)")
+@click.option("--type", "-t", "repo_type", default="", help="Project type (e.g., nextjs, fastapi)")
+def workspace_add(path: Path, name: str | None, repo_type: str) -> None:
+    """Add a repository to the workspace.
+
+    Adds a repository path to the current workspace for
+    cross-repo task coordination.
+
+    \\b
+    Examples:
+        adw workspace add ~/projects/frontend
+        adw workspace add ~/projects/backend -n api -t fastapi
+        adw workspace add . --name current-project
+    """
+    from .workspace import add_repo, get_active_workspace
+
+    # Check if workspace exists
+    ws = get_active_workspace()
+    if not ws:
+        console.print("[yellow]No workspace found. Creating default workspace...[/yellow]")
+        from .workspace import init_workspace
+
+        init_workspace("default")
+
+    resolved = path.resolve()
+    repo = add_repo(resolved, name=name, repo_type=repo_type)
+
+    if repo:
+        console.print(f"[green]✓ Added repository: {repo.name}[/green]")
+        console.print(f"[dim]  Path: {repo.path}[/dim]")
+        if repo.type:
+            console.print(f"[dim]  Type: {repo.type}[/dim]")
+
+        # Check if it's a git repo
+        if not repo.is_git_repo():
+            console.print("[yellow]  Warning: Not a git repository[/yellow]")
+
+        # Check if ADW is initialized
+        if not repo.has_adw():
+            console.print("[dim]  Tip: Run 'adw init' in the repo to initialize ADW[/dim]")
+    else:
+        console.print("[red]Failed to add repository[/red]")
+
+
+@workspace.command("remove")
+@click.argument("name")
+@click.confirmation_option(prompt="Remove this repository from workspace?")
+def workspace_remove(name: str) -> None:
+    """Remove a repository from the workspace.
+
+    Removes the repository from workspace configuration.
+    Does not delete the actual repository files.
+
+    \\b
+    Examples:
+        adw workspace remove frontend
+    """
+    from .workspace import remove_repo
+
+    if remove_repo(name):
+        console.print(f"[green]✓ Removed repository: {name}[/green]")
+    else:
+        console.print(f"[red]Repository not found: {name}[/red]")
+
+
+@workspace.command("list")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed information")
+def workspace_list_cmd(verbose: bool) -> None:
+    """List repositories in the workspace.
+
+    Shows all repositories configured in the current workspace.
+
+    \\b
+    Examples:
+        adw workspace list
+        adw workspace list -v
+    """
+    from .workspace import get_active_workspace, list_repos
+
+    ws = get_active_workspace()
+
+    if not ws:
+        console.print("[yellow]No workspace configured[/yellow]")
+        console.print("[dim]Run 'adw workspace init' to create one[/dim]")
+        return
+
+    repos = list_repos()
+
+    if not repos:
+        console.print(f"[yellow]Workspace '{ws.name}' has no repositories[/yellow]")
+        console.print("[dim]Run 'adw workspace add <path>' to add one[/dim]")
+        return
+
+    console.print(f"[bold cyan]Workspace: {ws.name}[/bold cyan]")
+    if ws.description:
+        console.print(f"[dim]{ws.description}[/dim]")
+    console.print()
+
+    for repo in repos:
+        status = "[green]✓[/green]" if repo.exists() else "[red]✗[/red]"
+        enabled = "" if repo.enabled else "[dim](disabled)[/dim]"
+
+        console.print(f"{status} [bold]{repo.name}[/bold] {enabled}")
+        console.print(f"   [dim]{repo.path}[/dim]")
+
+        if verbose:
+            if repo.type:
+                console.print(f"   [dim]Type: {repo.type}[/dim]")
+            console.print(f"   [dim]Branch: {repo.default_branch}[/dim]")
+            console.print(f"   [dim]Workflow: {repo.default_workflow}[/dim]")
+            if repo.is_git_repo():
+                console.print("   [dim]Git: yes[/dim]")
+            if repo.has_adw():
+                console.print("   [dim]ADW: initialized[/dim]")
+        console.print()
+
+    # Show relationships
+    if verbose and ws.relationships:
+        console.print("[bold]Relationships:[/bold]")
+        for rel in ws.relationships:
+            console.print(f"  {rel.source} --{rel.relationship_type}--> {rel.target}")
+        console.print()
+
+
+@workspace.command("show")
+def workspace_show() -> None:
+    """Show workspace details.
+
+    Displays the current workspace configuration including
+    all repositories and their relationships.
+
+    \\b
+    Examples:
+        adw workspace show
+    """
+    from .workspace import get_workspace_config_path, load_workspace
+
+    config_path = get_workspace_config_path()
+    config = load_workspace(config_path)
+    ws = config.get_active()
+
+    console.print(f"[dim]Config: {config_path}[/dim]")
+    console.print(f"[dim]Active workspace: {config.active_workspace}[/dim]")
+    console.print()
+
+    if not ws:
+        console.print("[yellow]No active workspace[/yellow]")
+        return
+
+    console.print(f"[bold cyan]Workspace: {ws.name}[/bold cyan]")
+    if ws.description:
+        console.print(f"[dim]{ws.description}[/dim]")
+    if ws.created_at:
+        console.print(f"[dim]Created: {ws.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+    console.print()
+
+    console.print(f"[bold]Repositories ({ws.repo_count}):[/bold]")
+    for repo in ws.repos:
+        status = "enabled" if repo.enabled else "disabled"
+        console.print(f"  • {repo.name} ({repo.type or 'unknown'}) - {status}")
+
+    if ws.relationships:
+        console.print()
+        console.print(f"[bold]Relationships ({len(ws.relationships)}):[/bold]")
+        for rel in ws.relationships:
+            console.print(f"  • {rel.source} {rel.relationship_type} {rel.target}")
+
+
+@workspace.command("switch")
+@click.argument("name")
+def workspace_switch(name: str) -> None:
+    """Switch to a different workspace.
+
+    Sets the active workspace for subsequent commands.
+
+    \\b
+    Examples:
+        adw workspace switch myproject
+    """
+    from .workspace import get_workspace_config_path, load_workspace, save_workspace
+
+    config_path = get_workspace_config_path()
+    config = load_workspace(config_path)
+
+    if config.set_active(name):
+        save_workspace(config, config_path)
+        console.print(f"[green]✓ Switched to workspace: {name}[/green]")
+    else:
+        console.print(f"[red]Workspace not found: {name}[/red]")
+
+        # Show available workspaces
+        if config.workspaces:
+            console.print()
+            console.print("[dim]Available workspaces:[/dim]")
+            for ws in config.workspaces:
+                marker = "*" if ws.name == config.active_workspace else " "
+                console.print(f"  {marker} {ws.name}")
+
+
+@workspace.command("depend")
+@click.argument("source")
+@click.argument("target")
+@click.option(
+    "--type",
+    "-t",
+    "rel_type",
+    type=click.Choice(["depends_on", "integrates_with"]),
+    default="depends_on",
+    help="Relationship type (default: depends_on)",
+)
+def workspace_depend(source: str, target: str, rel_type: str) -> None:
+    """Add a dependency between repositories.
+
+    Declares that one repository depends on another,
+    affecting task scheduling order.
+
+    \\b
+    Examples:
+        adw workspace depend frontend backend
+        adw workspace depend mobile api --type integrates_with
+    """
+    from .workspace import (
+        Relationship,
+        get_workspace_config_path,
+        load_workspace,
+        save_workspace,
+    )
+
+    config_path = get_workspace_config_path()
+    config = load_workspace(config_path)
+    ws = config.get_active()
+
+    if not ws:
+        console.print("[red]No active workspace[/red]")
+        return
+
+    # Verify repos exist
+    if not ws.get_repo(source):
+        console.print(f"[red]Repository not found: {source}[/red]")
+        return
+    if not ws.get_repo(target):
+        console.print(f"[red]Repository not found: {target}[/red]")
+        return
+
+    # Add relationship
+    rel = Relationship(source=source, target=target, relationship_type=rel_type)
+    ws.relationships.append(rel)
+    save_workspace(config, config_path)
+
+    console.print(f"[green]✓ Added dependency: {source} {rel_type} {target}[/green]")
+
+
+@workspace.command("undepend")
+@click.argument("source")
+@click.argument("target")
+def workspace_undepend(source: str, target: str) -> None:
+    """Remove a dependency between repositories.
+
+    \\b
+    Examples:
+        adw workspace undepend frontend backend
+    """
+    from .workspace import get_workspace_config_path, load_workspace, save_workspace
+
+    config_path = get_workspace_config_path()
+    config = load_workspace(config_path)
+    ws = config.get_active()
+
+    if not ws:
+        console.print("[red]No active workspace[/red]")
+        return
+
+    # Find and remove relationship
+    original_count = len(ws.relationships)
+    ws.relationships = [
+        r for r in ws.relationships if not (r.source == source and r.target == target)
+    ]
+
+    if len(ws.relationships) < original_count:
+        save_workspace(config, config_path)
+        console.print(f"[green]✓ Removed dependency: {source} -> {target}[/green]")
+    else:
+        console.print(f"[yellow]No dependency found: {source} -> {target}[/yellow]")
 
 
 # =============================================================================

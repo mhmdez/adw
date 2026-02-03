@@ -1,6 +1,6 @@
 [project]
 name = "adw-cli"
-version = "0.5.14"
+version = "0.5.15"
 description = "AI Developer Workflow CLI - Orchestrate Claude Code for any project"
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,6 +26,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "textual>=0.50.0",
     "watchfiles>=0.20.0",
+    "tomli-w>=1.0.0",
 ]
 
 [project.optional-dependencies]

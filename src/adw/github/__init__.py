@@ -19,6 +19,19 @@ from .comment_parser import (
     CommentType,
     parse_review_comment,
 )
+from .pr_linker import (
+    LinkedPR,
+    LinkStatus,
+    MergeResult,
+    PRLinkGroup,
+    create_link_group,
+    get_link_group,
+    list_link_groups,
+    merge_link_group,
+    parse_pr_url,
+    refresh_link_group,
+    unlink_prs,
+)
 from .review_watcher import (
     PRReviewWatcher,
     PRStatus,
@@ -50,4 +63,16 @@ __all__ = [
     "create_approval_request",
     "approve_task",
     "reject_task",
+    # PR Linker
+    "LinkedPR",
+    "LinkStatus",
+    "PRLinkGroup",
+    "MergeResult",
+    "create_link_group",
+    "get_link_group",
+    "list_link_groups",
+    "merge_link_group",
+    "refresh_link_group",
+    "unlink_prs",
+    "parse_pr_url",
 ]
