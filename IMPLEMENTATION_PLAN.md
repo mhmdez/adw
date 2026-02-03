@@ -4,7 +4,7 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 5 (Specialized Agents - IN PROGRESS)
-**Status:** Phase 5 expert framework complete - base class, frontend/backend/AI experts, auto-selection, and 49 tests. Total: 668 tests passing.
+**Status:** Phase 5 self-improving system complete - pattern learning, expertise injection, /improve command, and adw learn CLI. Total: 706 tests passing.
 
 ---
 
@@ -19,7 +19,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 2 - Quality Gates | **COMPLETE** | **100%** |
 | 3 - Context Engineering | **COMPLETE** | **100%** |
 | 4 - Feedback Loops | **COMPLETE** | **100%** |
-| 5 - Specialized Agents | Partial | 35% |
+| 5 - Specialized Agents | Partial | 65% |
 | 6 - Multi-Repo | Not Started | 0% |
 | 7 - Entry Points | Partial | 30% |
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
@@ -513,14 +513,19 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** MEDIUM
 **Specs:** `specs/phase-5/agent-experts.md`, `specs/phase-5/self-improving.md`, `specs/phase-5/specialized-planners.md`
-**Status:** 35% Complete (expert framework, 3 experts, auto-selection)
+**Status:** 65% Complete (expert framework, 3 experts, auto-selection, self-improving system)
 
 ### What Exists
 - `/experts:cc_expert` and `/experts:cc_expert:improve` commands
 - `/plan_vite_vue` specialized planner (696 lines, comprehensive)
 - Complete expert module in `src/adw/experts/`
 - Expert auto-selection system with keyword and file pattern matching
-- 49 tests for expert module
+- **NEW:** Complete learning module in `src/adw/learning/`
+- **NEW:** Pattern store with persistence at `~/.adw/learning/`
+- **NEW:** Expertise section injection into SDLC workflow prompts
+- **NEW:** `/improve` command for extracting learnings
+- **NEW:** `adw learn` CLI commands (show, stats, export, import, add, clear, report)
+- 87 tests for expert + learning modules
 
 ### Expert Framework Tasks
 
@@ -561,22 +566,34 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 ### Self-Improving Tasks
 
-- [ ] **P5-6** Add `## Expertise` section to agent prompts
-  - Document: patterns, issues, workarounds, best practices, mistakes to avoid
-  - Auto-update after task completion
+- [x] **P5-6** Add `## Expertise` section to agent prompts
+  - `inject_expertise_into_prompt()` adds expertise to PLAN and IMPLEMENT phases
+  - Combines expert knowledge with project-specific learnings
+  - Auto-injects patterns, issues, best practices, mistakes to avoid
+  - **Files:** `src/adw/learning/expertise.py`, `src/adw/workflows/sdlc.py`
 
-- [ ] **P5-7** Create `/improve` command
-  - Analyze recent task execution
-  - Extract what went well, retries needed, patterns discovered
-  - Update expertise sections
+- [x] **P5-7** Create `/improve` command
+  - Analyzes recent task execution for learnings
+  - Prompts for patterns, issues, and insights
+  - Records to `~/.adw/learning/<project>/patterns.json`
+  - **Files:** `.claude/commands/improve.md`
 
-- [ ] **P5-8** Implement pattern learning
-  - Track successful patterns (tests pass first try, approved without changes)
-  - Store in `~/.adw/patterns/<project>/patterns.json`
+- [x] **P5-8** Implement pattern learning
+  - `Learning` dataclass with type, content, domain, success_count
+  - `PatternStore` for persistence and retrieval
+  - `extract_learnings_from_feedback()` with 20+ regex patterns
+  - `record_task_outcome()` for automatic learning from tasks
+  - Supports: patterns, issues, best_practices, mistakes
+  - **Files:** `src/adw/learning/patterns.py`
 
-- [ ] **P5-9** Add `adw learn` CLI
-  - `adw learn --show` - View learnings
-  - `adw learn --export` - Share learnings
+- [x] **P5-9** Add `adw learn` CLI
+  - `adw learn show` - View learnings with filtering
+  - `adw learn stats` - Statistics on accumulated learnings
+  - `adw learn export` / `adw learn import` - Share learnings
+  - `adw learn add` - Manually add learnings
+  - `adw learn clear` - Clear learnings
+  - `adw learn report` - Generate full expertise report
+  - **Files:** `src/adw/cli.py`
 
 ### Specialized Planners Tasks
 
@@ -612,6 +629,19 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Expert stats (1 test)
   - Integration tests (2 tests)
   - File-based expert selection (2 tests)
+
+- `tests/test_learning.py` - 38 tests covering:
+  - Learning dataclass (5 tests)
+  - LearningType enum (1 test)
+  - PatternStore CRUD (8 tests)
+  - TaskOutcome serialization (1 test)
+  - Learning extraction from feedback (6 tests)
+  - Domain detection from files (4 tests)
+  - Expertise section building (4 tests)
+  - Expertise injection (2 tests)
+  - Combined expertise (2 tests)
+  - Record outcome (3 tests)
+  - Integration tests (2 tests)
 
 ---
 

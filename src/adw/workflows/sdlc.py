@@ -214,6 +214,7 @@ def execute_phase_with_retry(
     worktree_path: Path | None = None,
     retry_context: str | None = None,
     on_progress: Callable[[str], None] | None = None,
+    inject_expertise: bool = True,
 ) -> PhaseResult:
     """Execute a phase with optional retry context injection.
 
@@ -228,6 +229,7 @@ def execute_phase_with_retry(
         worktree_path: Optional working directory path.
         retry_context: Optional retry context from previous failure.
         on_progress: Progress callback.
+        inject_expertise: Whether to inject expertise section into prompt.
 
     Returns:
         PhaseResult with execution outcome.
@@ -239,6 +241,18 @@ def execute_phase_with_retry(
 
     # Build prompt with optional retry context
     prompt = phase_config.prompt_template.format(task=task_description)
+
+    # Inject expertise section for IMPLEMENT and PLAN phases
+    if inject_expertise and phase_name in ("implement", "plan"):
+        try:
+            from ..learning.expertise import inject_expertise_into_prompt
+            prompt = inject_expertise_into_prompt(
+                prompt=prompt,
+                position="end",
+            )
+        except Exception as e:
+            logger.debug("Could not inject expertise: %s", e)
+
     if retry_context:
         prompt = f"{prompt}\n\n{retry_context}"
         if on_progress:
@@ -300,6 +314,7 @@ def execute_phase(
     adw_id: str,
     state: ADWState,
     on_progress: Callable[[str], None] | None = None,
+    inject_expertise: bool = True,
 ) -> PhaseResult:
     """Execute a single SDLC phase."""
     import time
@@ -307,6 +322,17 @@ def execute_phase(
 
     phase_name = phase_config.name.value
     prompt = phase_config.prompt_template.format(task=task_description)
+
+    # Inject expertise section for IMPLEMENT and PLAN phases
+    if inject_expertise and phase_name in ("implement", "plan"):
+        try:
+            from ..learning.expertise import inject_expertise_into_prompt
+            prompt = inject_expertise_into_prompt(
+                prompt=prompt,
+                position="end",
+            )
+        except Exception as e:
+            logger.debug("Could not inject expertise: %s", e)
 
     if on_progress:
         on_progress(f"Starting {phase_name} phase...")

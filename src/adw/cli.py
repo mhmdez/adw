@@ -3000,6 +3000,275 @@ def bundle_compress(days: int) -> None:
 
 
 # =============================================================================
+# Learning Commands (Phase 5 - Self-Improving Agents)
+# =============================================================================
+
+
+@main.group()
+def learn() -> None:
+    """View and manage learned patterns.
+
+    ADW learns from successful task completions to improve future performance.
+    Use these commands to view, export, and manage learnings.
+    """
+    pass
+
+
+@learn.command("show")
+@click.option("--domain", "-d", help="Filter by domain (frontend, backend, ai)")
+@click.option("--type", "-t", "learning_type", help="Filter by type (pattern, issue, mistake, best_practice)")
+@click.option("--limit", "-n", type=int, default=20, help="Maximum learnings to show")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def learn_show(domain: str | None, learning_type: str | None, limit: int, as_json: bool) -> None:
+    """Show accumulated learnings.
+
+    Displays patterns, issues, best practices, and mistakes that ADW
+    has learned from previous task completions.
+
+    \\b
+    Examples:
+        adw learn show                     # Show all learnings
+        adw learn show -d frontend         # Frontend learnings only
+        adw learn show -t pattern -n 10    # Top 10 patterns
+        adw learn show --json              # JSON output
+    """
+    import json as json_lib
+
+    from .learning import LearningType, get_default_pattern_store
+
+    store = get_default_pattern_store()
+    learnings = store.learnings
+
+    # Filter by domain
+    if domain:
+        learnings = [l for l in learnings if l.domain == domain or l.domain == "general"]
+
+    # Filter by type
+    if learning_type:
+        try:
+            lt = LearningType(learning_type)
+            learnings = [l for l in learnings if l.type == lt]
+        except ValueError:
+            console.print(f"[red]Unknown learning type: {learning_type}[/red]")
+            console.print("[dim]Valid types: pattern, issue, mistake, best_practice[/dim]")
+            return
+
+    # Limit
+    learnings = learnings[:limit]
+
+    if not learnings:
+        console.print("[yellow]No learnings found[/yellow]")
+        console.print("[dim]Complete some tasks to start learning![/dim]")
+        console.print("[dim]Use '/improve' after tasks to record learnings.[/dim]")
+        return
+
+    if as_json:
+        output = [l.to_dict() for l in learnings]
+        click.echo(json_lib.dumps(output, indent=2, default=str))
+        return
+
+    # Display learnings grouped by type
+    console.print(f"[bold cyan]Learnings[/bold cyan] [dim]({len(learnings)} shown)[/dim]")
+    console.print()
+
+    # Group by type
+    by_type: dict[str, list] = {}
+    for l in learnings:
+        type_name = l.type.value
+        if type_name not in by_type:
+            by_type[type_name] = []
+        by_type[type_name].append(l)
+
+    type_icons = {
+        "pattern": "✨",
+        "issue": "⚠️",
+        "best_practice": "✅",
+        "mistake": "❌",
+    }
+
+    for type_name, type_learnings in by_type.items():
+        icon = type_icons.get(type_name, "•")
+        console.print(f"[bold]{icon} {type_name.replace('_', ' ').title()}s ({len(type_learnings)})[/bold]")
+        for l in type_learnings:
+            domain_tag = f" [dim][{l.domain}][/dim]" if l.domain != "general" else ""
+            console.print(f"  - {l.content}{domain_tag}")
+        console.print()
+
+
+@learn.command("stats")
+def learn_stats() -> None:
+    """Show learning statistics.
+
+    \\b
+    Examples:
+        adw learn stats
+    """
+    from .learning import get_default_pattern_store
+
+    store = get_default_pattern_store()
+    stats = store.get_statistics()
+
+    console.print("[bold cyan]Learning Statistics[/bold cyan]")
+    console.print()
+    console.print(f"[bold]Total Learnings:[/bold] {stats['total_learnings']}")
+    console.print()
+    console.print("[bold]By Type:[/bold]")
+    console.print(f"  Patterns:       {stats['patterns']}")
+    console.print(f"  Issues:         {stats['issues']}")
+    console.print(f"  Best Practices: {stats['best_practices']}")
+    console.print(f"  Mistakes:       {stats['mistakes']}")
+    console.print()
+    console.print(f"[bold]Domains:[/bold] {', '.join(stats['domains']) if stats['domains'] else 'none'}")
+
+
+@learn.command("export")
+@click.option("--output", "-o", type=click.Path(), help="Output file (default: stdout)")
+def learn_export(output: str | None) -> None:
+    """Export learnings for sharing.
+
+    Exports all learnings to a JSON file that can be imported elsewhere.
+
+    \\b
+    Examples:
+        adw learn export                    # Print to stdout
+        adw learn export -o learnings.json  # Save to file
+    """
+    import json as json_lib
+
+    from .learning import get_default_pattern_store
+
+    store = get_default_pattern_store()
+    data = store.export()
+
+    json_output = json_lib.dumps(data, indent=2, default=str)
+
+    if output:
+        Path(output).write_text(json_output)
+        console.print(f"[green]✓ Exported {data['statistics']['total_learnings']} learnings to {output}[/green]")
+    else:
+        click.echo(json_output)
+
+
+@learn.command("import")
+@click.argument("file", type=click.Path(exists=True))
+def learn_import(file: str) -> None:
+    """Import learnings from a file.
+
+    Imports learnings from an exported JSON file.
+
+    \\b
+    Examples:
+        adw learn import learnings.json
+    """
+    import json as json_lib
+
+    from .learning import get_default_pattern_store
+
+    try:
+        data = json_lib.loads(Path(file).read_text())
+    except json_lib.JSONDecodeError as e:
+        console.print(f"[red]Invalid JSON: {e}[/red]")
+        return
+
+    store = get_default_pattern_store()
+    count = store.import_learnings(data)
+
+    console.print(f"[green]✓ Imported {count} learnings[/green]")
+
+
+@learn.command("clear")
+@click.option("--domain", "-d", help="Clear only specific domain")
+@click.confirmation_option(prompt="Clear all learnings? This cannot be undone.")
+def learn_clear(domain: str | None) -> None:
+    """Clear all learnings.
+
+    \\b
+    Examples:
+        adw learn clear              # Clear all
+        adw learn clear -d frontend  # Clear frontend only
+    """
+    from .learning import get_default_pattern_store
+
+    store = get_default_pattern_store()
+
+    if domain:
+        store._learnings = [l for l in store.learnings if l.domain != domain]
+        store.save()
+        console.print(f"[green]✓ Cleared learnings for domain: {domain}[/green]")
+    else:
+        store._learnings = []
+        store.save()
+        console.print("[green]✓ Cleared all learnings[/green]")
+
+
+@learn.command("report")
+@click.option("--output", "-o", type=click.Path(), help="Save report to file")
+def learn_report(output: str | None) -> None:
+    """Generate a full expertise report.
+
+    Creates a comprehensive markdown report of all learnings.
+
+    \\b
+    Examples:
+        adw learn report                    # Print to stdout
+        adw learn report -o expertise.md    # Save to file
+    """
+    from .learning.expertise import generate_expertise_report
+
+    report = generate_expertise_report()
+
+    if output:
+        Path(output).write_text(report)
+        console.print(f"[green]✓ Saved report to {output}[/green]")
+    else:
+        console.print(report)
+
+
+@learn.command("add")
+@click.argument("content")
+@click.option("--type", "-t", "learning_type", default="pattern", help="Type: pattern, issue, best_practice, mistake")
+@click.option("--domain", "-d", default="general", help="Domain: frontend, backend, ai, general")
+@click.option("--context", "-c", help="Additional context")
+def learn_add(content: str, learning_type: str, domain: str, context: str | None) -> None:
+    """Manually add a learning.
+
+    \\b
+    Examples:
+        adw learn add "Use compound components for forms" -d frontend
+        adw learn add "Memory leak in X" -t issue -c "Use WeakRef"
+        adw learn add "Don't use any type" -t mistake -d backend
+    """
+    from .learning import Learning, LearningType, get_default_pattern_store
+
+    try:
+        lt = LearningType(learning_type)
+    except ValueError:
+        console.print(f"[red]Unknown type: {learning_type}[/red]")
+        console.print("[dim]Valid: pattern, issue, best_practice, mistake[/dim]")
+        return
+
+    store = get_default_pattern_store()
+    learning = Learning(
+        type=lt,
+        content=content,
+        context=context or "",
+        domain=domain,
+    )
+    store.add_learning(learning)
+    store.save()
+
+    type_icons = {
+        "pattern": "✨",
+        "issue": "⚠️",
+        "best_practice": "✅",
+        "mistake": "❌",
+    }
+    icon = type_icons.get(learning_type, "•")
+
+    console.print(f"[green]✓ Added {icon} {learning_type}: {content}[/green]")
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 
