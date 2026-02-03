@@ -4,7 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 6 (Multi-Repo - NOT STARTED)
-**Status:** Phase 5 COMPLETE - specialized planners (/plan_fastapi, /plan_react, /plan_nextjs, /plan_supabase) and auto-detect `adw plan` CLI. Total: 730 tests passing.
+**Version:** 0.5.12
+**Status:** Phase 5 COMPLETE - specialized planners (/plan_fastapi, /plan_react, /plan_nextjs, /plan_supabase) and auto-detect `adw plan` CLI. Total: 730 tests passing. Code quality: all ruff lint errors fixed, line length increased to 120.
 
 ---
 
