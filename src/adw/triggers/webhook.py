@@ -862,6 +862,11 @@ def handle_github_event(event_type: str, payload: dict[str, Any]) -> dict[str, A
         Response dict.
     """
     from ..agent.utils import generate_adw_id
+    from ..integrations.issue_parser import (
+        extract_config_from_labels,
+        merge_template_with_labels,
+        parse_issue_body,
+    )
 
     if event_type == "issues":
         action = payload.get("action")
@@ -871,17 +876,43 @@ def handle_github_event(event_type: str, payload: dict[str, Any]) -> dict[str, A
                 issue = payload.get("issue", {})
                 adw_id = generate_adw_id()
 
+                # Extract all labels
+                labels = [lbl.get("name", "") for lbl in issue.get("labels", [])]
+
+                # Parse issue template
+                title = issue.get("title", "")
+                body = issue.get("body", "") or ""
+                template = parse_issue_body(body, title)
+
+                # Merge with label configuration (labels take precedence)
+                template = merge_template_with_labels(template, labels)
+
+                # Determine workflow and model
+                workflow = template.get_workflow_or_default()
+                model = template.get_model_or_default()
+
+                # Build enhanced context for the agent
+                context_prompt = template.build_context_prompt()
+                full_body = f"{body}\n\n{context_prompt}" if context_prompt else body
+
                 # Trigger async workflow
                 _trigger_workflow_async(
-                    task=issue.get("title", ""),
-                    body=issue.get("body", ""),
+                    task=title,
+                    body=full_body,
                     adw_id=adw_id,
-                    workflow="standard",
-                    model="sonnet",
+                    workflow=workflow,
+                    model=model,
                     worktree_name=f"issue-{issue.get('number')}-{adw_id}",
                 )
 
-                return {"status": "triggered", "adw_id": adw_id}
+                return {
+                    "status": "triggered",
+                    "adw_id": adw_id,
+                    "workflow": workflow,
+                    "model": model,
+                    "issue_type": template.issue_type.value,
+                    "priority": template.priority.value,
+                }
 
     elif event_type == "issue_comment":
         action = payload.get("action")
@@ -897,16 +928,29 @@ def handle_github_event(event_type: str, payload: dict[str, Any]) -> dict[str, A
                 issue = payload.get("issue", {})
                 adw_id = generate_adw_id()
 
+                # Extract labels for configuration
+                labels = [lbl.get("name", "") for lbl in issue.get("labels", [])]
+                label_config = extract_config_from_labels(labels)
+
+                # Use label config or defaults
+                workflow = label_config["workflow"] or "standard"
+                model = label_config["model"] or "sonnet"
+
                 _trigger_workflow_async(
                     task=comment[4:],  # Remove "adw " prefix
-                    body=issue.get("body", ""),
+                    body=issue.get("body", "") or "",
                     adw_id=adw_id,
-                    workflow="standard",
-                    model="sonnet",
+                    workflow=workflow,
+                    model=model,
                     worktree_name=f"issue-{issue.get('number')}-{adw_id}",
                 )
 
-                return {"status": "triggered", "adw_id": adw_id}
+                return {
+                    "status": "triggered",
+                    "adw_id": adw_id,
+                    "workflow": workflow,
+                    "model": model,
+                }
 
     return {"status": "ignored"}
 
