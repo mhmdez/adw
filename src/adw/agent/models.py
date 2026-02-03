@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class TaskStatus(str, Enum):
     PENDING = "pending"
     BLOCKED = "blocked"
+    AWAITING_REVIEW = "awaiting_review"
     IN_PROGRESS = "in_progress"
     DONE = "done"
     FAILED = "failed"

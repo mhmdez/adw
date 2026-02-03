@@ -1115,6 +1115,358 @@ def github_process(issue_number: int, dry_run: bool) -> None:
         )
 
 
+@github.command("watch-pr")
+@click.argument("pr_number", type=int)
+@click.option(
+    "--interval",
+    "-i",
+    type=int,
+    default=60,
+    help="Seconds between checks (default: 60)",
+)
+@click.option(
+    "--auto-fix",
+    "-a",
+    is_flag=True,
+    help="Automatically fix actionable comments",
+)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show comments without fixing",
+)
+def github_watch_pr(pr_number: int, interval: int, auto_fix: bool, dry_run: bool) -> None:
+    """Watch a PR for review comments.
+
+    Monitors a pull request for new review comments and can
+    automatically implement requested changes.
+
+    \\b
+    Examples:
+        adw github watch-pr 123              # Watch PR #123
+        adw github watch-pr 123 --auto-fix   # Auto-fix comments
+        adw github watch-pr 123 --dry-run    # Show without fixing
+    """
+    from .github import PRReviewWatcher, CommentParser, apply_review_fixes
+    from .agent.executor import generate_adw_id
+
+    console.print(f"[bold cyan]Watching PR #{pr_number}[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Check interval: {interval}s[/dim]")
+    if auto_fix:
+        console.print("[yellow]Auto-fix enabled[/yellow]")
+    if dry_run:
+        console.print("[yellow]DRY RUN MODE[/yellow]")
+    console.print()
+    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
+    console.print()
+
+    # Create watcher with state file
+    state_file = Path.cwd() / ".adw" / "pr_watchers" / f"pr-{pr_number}.json"
+    watcher = PRReviewWatcher(
+        pr_number=pr_number,
+        state_file=state_file,
+    )
+
+    try:
+        import time
+
+        while True:
+            # Check PR status
+            info = watcher.get_pr_info()
+            if not info:
+                console.print(f"[red]Could not get PR info[/red]")
+                time.sleep(interval)
+                continue
+
+            if info.state.value in ("closed", "merged"):
+                console.print(f"[yellow]PR is {info.state.value}, stopping watcher[/yellow]")
+                break
+
+            # Get new comments
+            new_comments = watcher.get_new_comments()
+
+            if new_comments:
+                console.print(f"[cyan]Found {len(new_comments)} new comment(s)[/cyan]")
+
+                # Parse comments
+                parser = CommentParser(comments=new_comments)
+                actionable = parser.get_actionable()
+
+                if actionable:
+                    console.print(f"[bold]{len(actionable)} actionable comment(s):[/bold]")
+                    for c in actionable:
+                        console.print(f"  • {c.action_description[:60]}...")
+
+                    if auto_fix and not dry_run:
+                        adw_id = generate_adw_id()
+                        console.print(f"[dim]Applying fixes (ADW ID: {adw_id})...[/dim]")
+
+                        results = apply_review_fixes(
+                            pr_number=pr_number,
+                            comments=actionable,
+                            working_dir=Path.cwd(),
+                            adw_id=adw_id,
+                        )
+
+                        for result in results:
+                            if result.success:
+                                console.print(f"[green]✓ Fixed comment {result.comment_id}[/green]")
+                            else:
+                                console.print(f"[red]✗ Failed: {result.error_message}[/red]")
+
+            time.sleep(interval)
+
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Watcher stopped[/yellow]")
+
+
+@github.command("fix-comments")
+@click.argument("pr_number", type=int)
+@click.option(
+    "--all",
+    "-a",
+    "fix_all",
+    is_flag=True,
+    help="Fix all pending comments (default: only new)",
+)
+@click.option(
+    "--dry-run",
+    "-d",
+    is_flag=True,
+    help="Show what would be fixed without making changes",
+)
+def github_fix_comments(pr_number: int, fix_all: bool, dry_run: bool) -> None:
+    """Fix review comments on a PR.
+
+    Processes actionable review comments and applies fixes.
+
+    \\b
+    Examples:
+        adw github fix-comments 123           # Fix new comments
+        adw github fix-comments 123 --all     # Fix all comments
+        adw github fix-comments 123 --dry-run # Show without fixing
+    """
+    from .github import get_pr_review_comments, CommentParser, apply_review_fixes
+    from .agent.executor import generate_adw_id
+
+    console.print(f"[bold cyan]Processing PR #{pr_number} review comments[/bold cyan]")
+    console.print()
+
+    # Get comments
+    comments = get_pr_review_comments(pr_number)
+
+    if not comments:
+        console.print("[yellow]No review comments found[/yellow]")
+        return
+
+    # Parse comments
+    parser = CommentParser(comments=comments)
+    console.print(parser.summary())
+    console.print()
+
+    actionable = parser.get_actionable()
+
+    if not actionable:
+        console.print("[green]No actionable comments to fix[/green]")
+        return
+
+    console.print(f"[bold]Actionable comments ({len(actionable)}):[/bold]")
+    for c in actionable:
+        priority = f"[{'red' if c.priority.value == 'high' else 'yellow'}]{c.priority.value}[/]"
+        console.print(f"  {priority} {c.action_description[:60]}...")
+        if c.file_path:
+            console.print(f"       [dim]{c.file_path}:{c.line_number or '?'}[/dim]")
+    console.print()
+
+    if dry_run:
+        console.print("[yellow]DRY RUN: No changes made[/yellow]")
+        return
+
+    if not click.confirm("Apply fixes?"):
+        return
+
+    adw_id = generate_adw_id()
+    console.print(f"[dim]ADW ID: {adw_id}[/dim]")
+
+    results = apply_review_fixes(
+        pr_number=pr_number,
+        comments=actionable,
+        working_dir=Path.cwd(),
+        adw_id=adw_id,
+    )
+
+    console.print()
+    success_count = sum(1 for r in results if r.success)
+    console.print(f"[bold]Results: {success_count}/{len(results)} fixed[/bold]")
+
+    for result in results:
+        if result.success:
+            console.print(f"[green]✓ Fixed (commit {result.commit_hash})[/green]")
+        else:
+            console.print(f"[red]✗ Failed: {result.error_message}[/red]")
+
+
+# ============== Human-in-the-Loop Approval Commands ==============
+
+
+@main.command("approve-task")
+@click.argument("task_id")
+def approve_task_cmd(task_id: str) -> None:
+    """Approve a task awaiting review.
+
+    Approves a task that is waiting for human approval
+    before proceeding with implementation.
+
+    \\b
+    Examples:
+        adw approve-task abc12345
+    """
+    from .github.approval_gate import approve_task, load_approval_request
+
+    request = load_approval_request(task_id)
+
+    if not request:
+        console.print(f"[red]No approval request found for task {task_id}[/red]")
+        console.print("[dim]Use 'adw pending-approvals' to see pending requests[/dim]")
+        return
+
+    if not request.is_pending:
+        console.print(f"[yellow]Task {task_id} is not pending approval[/yellow]")
+        console.print(f"[dim]Current status: {request.status.value}[/dim]")
+        return
+
+    # Show request details
+    console.print(f"[bold]Approving: {request.title}[/bold]")
+    console.print()
+    console.print(f"[dim]{request.description[:200]}...[/dim]" if len(request.description) > 200 else f"[dim]{request.description}[/dim]")
+    console.print()
+
+    if not click.confirm("Approve this task?"):
+        return
+
+    result = approve_task(task_id)
+
+    if result:
+        console.print()
+        console.print(f"[green]✓ Task {task_id} approved[/green]")
+    else:
+        console.print(f"[red]Failed to approve task[/red]")
+
+
+@main.command("reject-task")
+@click.argument("task_id")
+@click.option(
+    "--reason",
+    "-r",
+    required=True,
+    help="Reason for rejection",
+)
+def reject_task_cmd(task_id: str, reason: str) -> None:
+    """Reject a task awaiting review.
+
+    Rejects a task with a reason, sending it back to the
+    planning phase with the feedback included.
+
+    \\b
+    Examples:
+        adw reject-task abc12345 -r "Wrong approach"
+        adw reject-task abc12345 --reason "Need more error handling"
+    """
+    from .github.approval_gate import reject_task, load_approval_request
+
+    request = load_approval_request(task_id)
+
+    if not request:
+        console.print(f"[red]No approval request found for task {task_id}[/red]")
+        return
+
+    if not request.is_pending:
+        console.print(f"[yellow]Task {task_id} is not pending approval[/yellow]")
+        console.print(f"[dim]Current status: {request.status.value}[/dim]")
+        return
+
+    console.print(f"[bold]Rejecting: {request.title}[/bold]")
+    console.print(f"[dim]Reason: {reason}[/dim]")
+    console.print()
+
+    result = reject_task(task_id, reason)
+
+    if result:
+        console.print(f"[yellow]✗ Task {task_id} rejected[/yellow]")
+        console.print("[dim]Task will return to planning phase with feedback[/dim]")
+    else:
+        console.print(f"[red]Failed to reject task[/red]")
+
+
+@main.command("continue-task")
+@click.argument("task_id")
+@click.argument("feedback", nargs=-1, required=True)
+def continue_task_cmd(task_id: str, feedback: tuple[str, ...]) -> None:
+    """Add feedback to a task.
+
+    Adds iterative feedback to a task, which will be included
+    in the context when the task is re-run.
+
+    \\b
+    Examples:
+        adw continue-task abc12345 "Add input validation"
+        adw continue-task abc12345 Add more error handling
+    """
+    from .github.approval_gate import add_continue_prompt, load_approval_request
+
+    feedback_str = " ".join(feedback)
+
+    request = load_approval_request(task_id)
+
+    if not request:
+        console.print(f"[red]No approval request found for task {task_id}[/red]")
+        return
+
+    result = add_continue_prompt(task_id, feedback_str)
+
+    if result:
+        console.print(f"[green]✓ Feedback added to task {task_id}[/green]")
+        console.print(f"[dim]Total feedback items: {len(result.continue_prompts)}[/dim]")
+    else:
+        console.print(f"[red]Failed to add feedback[/red]")
+
+
+@main.command("pending-approvals")
+def pending_approvals_cmd() -> None:
+    """List tasks awaiting approval.
+
+    Shows all tasks that are waiting for human review and approval.
+
+    \\b
+    Examples:
+        adw pending-approvals
+    """
+    from .github.approval_gate import list_pending_approvals
+
+    pending = list_pending_approvals()
+
+    if not pending:
+        console.print("[green]No pending approvals[/green]")
+        return
+
+    console.print(f"[bold cyan]Pending Approvals ({len(pending)})[/bold cyan]")
+    console.print()
+
+    for request in pending:
+        console.print(f"[bold]{request.task_id}[/bold]: {request.title}")
+        console.print(f"  [dim]Created: {request.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+        if request.expires_at:
+            console.print(f"  [dim]Expires: {request.expires_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+        if request.files_to_modify:
+            console.print(f"  [dim]Files: {len(request.files_to_modify)}[/dim]")
+        console.print()
+
+    console.print("[dim]Use 'adw approve-task <id>' or 'adw reject-task <id> -r <reason>'[/dim]")
+
+
 @main.command()
 @click.option(
     "--poll-interval",
