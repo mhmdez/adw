@@ -3269,6 +3269,154 @@ def learn_add(content: str, learning_type: str, domain: str, context: str | None
 
 
 # =============================================================================
+# Planning Commands (Phase 5)
+# =============================================================================
+
+
+@main.command("plan")
+@click.argument("description", required=False)
+@click.option(
+    "--planner",
+    "-p",
+    type=click.Choice(["auto", "generic", "fastapi", "react", "nextjs", "supabase", "vue"]),
+    default="auto",
+    help="Planner to use (default: auto-detect)",
+)
+@click.option("--show", "-s", is_flag=True, help="Show detected planner without running")
+def plan_cmd(description: str | None, planner: str, show: bool) -> None:
+    """Create an implementation plan with auto-detected planner.
+
+    Auto-detects the project type and suggests the appropriate specialized
+    planner command. Can also run planning directly with detected context.
+
+    \\b
+    Examples:
+        adw plan                              # Show detected planner
+        adw plan "Add user auth"              # Auto-detect and plan
+        adw plan --planner fastapi "Add API"  # Force FastAPI planner
+        adw plan --show                       # Show detection only
+    """
+    from .context import detect_project_type
+    from .context.priming import ProjectType
+
+    detection = detect_project_type()
+
+    # Map project types to planners
+    planner_map = {
+        ProjectType.FASTAPI: "fastapi",
+        ProjectType.DJANGO: "fastapi",  # Use FastAPI planner for Python APIs
+        ProjectType.FLASK: "fastapi",
+        ProjectType.REACT: "react",
+        ProjectType.NEXTJS: "nextjs",
+        ProjectType.VUE: "vue",
+        ProjectType.PYTHON: "generic",
+        ProjectType.NODEJS: "generic",
+        ProjectType.TYPESCRIPT: "react",  # TypeScript often React
+        ProjectType.GO: "generic",
+        ProjectType.RUST: "generic",
+        ProjectType.UNKNOWN: "generic",
+    }
+
+    # Detect Supabase usage
+    supabase_detected = False
+    try:
+        # Check for Supabase in package.json or requirements
+        package_json = Path("package.json")
+        if package_json.exists():
+            import json
+            pkg = json.loads(package_json.read_text())
+            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            if "@supabase/supabase-js" in deps:
+                supabase_detected = True
+
+        pyproject = Path("pyproject.toml")
+        if pyproject.exists() and "supabase" in pyproject.read_text().lower():
+            supabase_detected = True
+
+        requirements = Path("requirements.txt")
+        if requirements.exists() and "supabase" in requirements.read_text().lower():
+            supabase_detected = True
+    except Exception:
+        pass
+
+    # Determine suggested planner
+    if planner == "auto":
+        if supabase_detected:
+            suggested_planner = "supabase"
+        else:
+            suggested_planner = planner_map.get(detection.project_type, "generic")
+    else:
+        suggested_planner = planner
+
+    # Planner command map
+    planner_commands = {
+        "fastapi": "/plan_fastapi",
+        "react": "/plan_react",
+        "nextjs": "/plan_nextjs",
+        "supabase": "/plan_supabase",
+        "vue": "/plan_vite_vue",
+        "generic": "/plan",
+    }
+
+    planner_descriptions = {
+        "fastapi": "FastAPI API-first planner (routers, Pydantic, DI)",
+        "react": "React component-first planner (hooks, state, RTL)",
+        "nextjs": "Next.js full-stack planner (SSR/SSG, App Router)",
+        "supabase": "Supabase database-first planner (RLS, Edge Functions)",
+        "vue": "Vue 3 planner (Composition API, Pinia)",
+        "generic": "Generic planner (framework-agnostic)",
+    }
+
+    if show or not description:
+        # Show detection results
+        console.print("[bold cyan]Project Analysis[/bold cyan]")
+        console.print()
+        console.print(f"[bold]Project Type:[/bold] {detection.project_type.value}")
+        if detection.framework:
+            console.print(f"[bold]Framework:[/bold] {detection.framework}")
+        if detection.test_framework:
+            console.print(f"[bold]Test Framework:[/bold] {detection.test_framework}")
+        if supabase_detected:
+            console.print("[bold]Database:[/bold] Supabase detected")
+        console.print()
+
+        console.print(f"[bold]Suggested Planner:[/bold] {suggested_planner}")
+        console.print(f"[dim]{planner_descriptions.get(suggested_planner, '')}[/dim]")
+        console.print()
+
+        console.print("[bold]Available Planners:[/bold]")
+        for key, desc in planner_descriptions.items():
+            marker = " [green]← suggested[/green]" if key == suggested_planner else ""
+            console.print(f"  [cyan]{planner_commands[key]}[/cyan]{marker}")
+            console.print(f"    [dim]{desc}[/dim]")
+        console.print()
+
+        if not description:
+            console.print("[dim]Usage: adw plan \"<description>\" to run planning[/dim]")
+            cmd = planner_commands[suggested_planner]
+            console.print(f"[dim]  or use: {cmd} <description> in Claude Code[/dim]")
+        return
+
+    # Provide guidance for running the planner
+    cmd = planner_commands[suggested_planner]
+    console.print(f"[bold cyan]Planning: {description}[/bold cyan]")
+    console.print()
+    console.print(f"[bold]Detected Planner:[/bold] {suggested_planner}")
+    console.print(f"[dim]{planner_descriptions.get(suggested_planner, '')}[/dim]")
+    console.print()
+    console.print("[bold]To create the plan, run in Claude Code:[/bold]")
+    console.print()
+    console.print(f"  [cyan]{cmd} {description}[/cyan]")
+    console.print()
+    console.print("[dim]The planner will:[/dim]")
+    console.print("  [dim]1. Analyze codebase structure[/dim]")
+    console.print("  [dim]2. Design implementation approach[/dim]")
+    console.print("  [dim]3. Create spec file in specs/[/dim]")
+    console.print()
+    console.print("[dim]Then use /implement <spec-file> to execute[/dim]")
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 
