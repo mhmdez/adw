@@ -24,8 +24,10 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 
 import click
 
@@ -61,6 +63,7 @@ class DSLPhaseResult:
     duration_seconds: float = 0.0
     test_result: ValidationResult | None = None
     loop_iterations: int = 1
+    was_parallel: bool = False  # True if executed as part of a parallel group
 
 
 @dataclass
@@ -73,11 +76,18 @@ class DSLExecutionContext:
     state: ADWState
     last_test_passed: bool = True
     has_changes: bool = False
-    phase_results: dict[str, DSLPhaseResult] | None = None
+    phase_results: dict[str, DSLPhaseResult] = field(default_factory=dict)
+    _lock: Lock = field(default_factory=Lock, repr=False)
 
-    def __post_init__(self) -> None:
-        if self.phase_results is None:
-            self.phase_results = {}
+    def update_result(self, phase_name: str, result: DSLPhaseResult) -> None:
+        """Thread-safe update of phase results."""
+        with self._lock:
+            self.phase_results[phase_name] = result
+
+    def get_result(self, phase_name: str) -> DSLPhaseResult | None:
+        """Thread-safe get of phase result."""
+        with self._lock:
+            return self.phase_results.get(phase_name)
 
 
 def check_git_changes(worktree_path: Path) -> bool:
@@ -386,6 +396,140 @@ def execute_phase_with_loop(
     return final_result or result, attempt_records
 
 
+# ============================================================================
+# Parallel Execution Support
+# ============================================================================
+
+
+def build_parallel_groups(
+    phases: list[PhaseDefinition],
+) -> list[list[PhaseDefinition]]:
+    """Build groups of phases that can be executed together.
+
+    Phases with `parallel_with` references are grouped together.
+    Phases without parallel references are in their own single-phase group.
+
+    Args:
+        phases: List of phase definitions.
+
+    Returns:
+        List of phase groups (each group executes in parallel).
+    """
+    groups: list[list[PhaseDefinition]] = []
+    processed_names: set[str] = set()
+
+    for phase in phases:
+        if phase.name in processed_names:
+            continue
+
+        if phase.parallel_with:
+            # Build a group with this phase and all its parallel partners
+            group = [phase]
+            processed_names.add(phase.name)
+
+            for ref_name in phase.parallel_with:
+                # Find the referenced phase
+                ref_phase = next((p for p in phases if p.name == ref_name), None)
+                if ref_phase and ref_name not in processed_names:
+                    group.append(ref_phase)
+                    processed_names.add(ref_name)
+
+            groups.append(group)
+        else:
+            # Single phase group
+            groups.append([phase])
+            processed_names.add(phase.name)
+
+    return groups
+
+
+def execute_parallel_phases(
+    phases: list[PhaseDefinition],
+    context: DSLExecutionContext,
+    on_progress: Callable[[str], None] | None = None,
+    max_workers: int = 4,
+) -> tuple[list[DSLPhaseResult], list[AttemptRecord]]:
+    """Execute multiple phases in parallel.
+
+    Args:
+        phases: List of phases to execute in parallel.
+        context: Execution context shared by all phases.
+        on_progress: Optional progress callback (called thread-safely).
+        max_workers: Maximum number of concurrent phase executions.
+
+    Returns:
+        Tuple of (list of results, list of attempt records).
+    """
+    results: list[DSLPhaseResult] = []
+    all_attempt_records: list[AttemptRecord] = []
+    results_lock = Lock()
+
+    if len(phases) == 1:
+        # Single phase, no need for threading
+        result, attempt_records = execute_phase_with_loop(
+            phase=phases[0],
+            context=context,
+            on_progress=on_progress,
+        )
+        return [result], attempt_records
+
+    if on_progress:
+        phase_names = ", ".join(p.name for p in phases)
+        on_progress(f"Executing phases in parallel: {phase_names}")
+
+    def execute_single(phase: PhaseDefinition) -> tuple[DSLPhaseResult, list[AttemptRecord]]:
+        """Execute a single phase in a thread."""
+        # Create thread-safe progress callback
+        def thread_progress(msg: str) -> None:
+            if on_progress:
+                on_progress(f"[{phase.name}] {msg}")
+
+        result, attempt_records = execute_phase_with_loop(
+            phase=phase,
+            context=context,
+            on_progress=thread_progress,
+        )
+        result.was_parallel = True
+        return result, attempt_records
+
+    # Execute phases in parallel using ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(phases))) as executor:
+        # Submit all phases
+        future_to_phase = {
+            executor.submit(execute_single, phase): phase
+            for phase in phases
+        }
+
+        # Collect results as they complete
+        for future in as_completed(future_to_phase):
+            phase = future_to_phase[future]
+            try:
+                result, attempt_records = future.result()
+                with results_lock:
+                    results.append(result)
+                    all_attempt_records.extend(attempt_records)
+                    # Update context with result
+                    context.update_result(phase.name, result)
+            except Exception as e:
+                # Handle unexpected exceptions during parallel execution
+                logger.error("Phase %s failed with exception: %s", phase.name, e)
+                error_result = DSLPhaseResult(
+                    phase_name=phase.name,
+                    success=False,
+                    error=str(e),
+                    was_parallel=True,
+                )
+                with results_lock:
+                    results.append(error_result)
+                    context.update_result(phase.name, error_result)
+
+    # Sort results to match original phase order
+    phase_order = {p.name: i for i, p in enumerate(phases)}
+    results.sort(key=lambda r: phase_order.get(r.phase_name, 999))
+
+    return results, all_attempt_records
+
+
 def get_current_commit() -> str | None:
     """Get current git commit hash."""
     try:
@@ -459,60 +603,92 @@ def run_dsl_workflow(
     if on_progress:
         on_progress(f"Starting workflow: {workflow.name} ({len(phases)} phases)")
 
-    for phase in phases:
-        # Check condition
-        if not evaluate_condition(phase.condition, phase.condition_value, context):
-            if on_progress:
-                on_progress(f"Skipping phase {phase.name}: condition not met ({phase.condition.value})")
+    # Build phase groups for parallel execution
+    phase_groups = build_parallel_groups(phases)
+
+    for group in phase_groups:
+        # Filter out phases that don't meet conditions or should be skipped
+        eligible_phases: list[PhaseDefinition] = []
+        for phase in group:
+            # Check condition
+            if not evaluate_condition(phase.condition, phase.condition_value, context):
+                if on_progress:
+                    on_progress(f"Skipping phase {phase.name}: condition not met ({phase.condition.value})")
+                continue
+
+            # Skip optional phases if a required phase has failed
+            if not phase.required and required_failed and workflow.skip_optional_on_failure:
+                if on_progress:
+                    on_progress(f"Skipping optional phase {phase.name}: previous required phase failed")
+                continue
+
+            eligible_phases.append(phase)
+
+        if not eligible_phases:
             continue
 
-        # Skip optional phases if a required phase has failed
-        if not phase.required and required_failed and workflow.skip_optional_on_failure:
+        # Execute phases (parallel if multiple, sequential if single)
+        if len(eligible_phases) > 1:
+            # Parallel execution
+            group_results, attempt_records = execute_parallel_phases(
+                phases=eligible_phases,
+                context=context,
+                on_progress=on_progress,
+            )
+        else:
+            # Single phase execution
+            phase = eligible_phases[0]
             if on_progress:
-                on_progress(f"Skipping optional phase {phase.name}: previous required phase failed")
-            continue
+                on_progress(f"Phase: {phase.name}")
 
-        if on_progress:
-            on_progress(f"Phase: {phase.name}")
+            result, attempt_records = execute_phase_with_loop(
+                phase=phase,
+                context=context,
+                on_progress=on_progress,
+            )
+            group_results = [result]
 
-        # Execute phase with loop handling
-        result, attempt_records = execute_phase_with_loop(
-            phase=phase,
-            context=context,
-            on_progress=on_progress,
-        )
-
-        results.append(result)
+        # Process results
+        results.extend(group_results)
         all_attempt_records.extend(attempt_records)
-        context.phase_results[phase.name] = result
+
+        for result in group_results:
+            context.update_result(result.phase_name, result)
 
         # Update context state
         context.has_changes = check_git_changes(worktree_path)
 
-        if not result.success:
-            if phase.required:
-                overall_success = False
-                required_failed = True
+        # Check for failures
+        fail_fast_triggered = False
+        for result in group_results:
+            if not result.success:
+                failed_phase = next((p for p in eligible_phases if p.name == result.phase_name), None)
+                if failed_phase and failed_phase.required:
+                    overall_success = False
+                    required_failed = True
 
-                if on_progress:
-                    on_progress(f"Required phase {phase.name} failed: {result.error}")
+                    if on_progress:
+                        on_progress(f"Required phase {result.phase_name} failed: {result.error}")
 
-                # Generate escalation report if there were retries
-                if attempt_records:
-                    generate_escalation_report(
-                        task_id=adw_id,
-                        task_description=task_description,
-                        workflow_type=workflow.name,
-                        attempts=all_attempt_records,
-                        output_dir=Path(f"agents/{adw_id}"),
-                    )
-                    logger.warning("Generated escalation report for task %s", adw_id)
+                    # Generate escalation report if there were retries
+                    if attempt_records:
+                        generate_escalation_report(
+                            task_id=adw_id,
+                            task_description=task_description,
+                            workflow_type=workflow.name,
+                            attempts=all_attempt_records,
+                            output_dir=Path(f"agents/{adw_id}"),
+                        )
+                        logger.warning("Generated escalation report for task %s", adw_id)
 
-                if workflow.fail_fast:
-                    break
-            else:
-                if on_progress:
-                    on_progress(f"Optional phase {phase.name} failed, continuing...")
+                    if workflow.fail_fast:
+                        fail_fast_triggered = True
+                else:
+                    if on_progress:
+                        on_progress(f"Optional phase {result.phase_name} failed, continuing...")
+
+        if fail_fast_triggered:
+            break
 
     # Get final commit
     commit_hash = get_current_commit()
@@ -525,8 +701,8 @@ def run_dsl_workflow(
         if on_progress:
             on_progress("Workflow completed successfully")
     else:
-        failed_phase = next((r for r in results if not r.success), None)
-        error_msg = failed_phase.error if failed_phase and failed_phase.error else "Unknown error"
+        failed_result = next((r for r in results if not r.success), None)
+        error_msg = failed_result.error if failed_result and failed_result.error else "Unknown error"
         mark_failed(tasks_file, task_description, adw_id, error_msg)
         context.state.save("failed")
 
@@ -539,7 +715,8 @@ def format_dsl_results_summary(workflow_name: str, results: list[DSLPhaseResult]
 
     for result in results:
         status = "✅" if result.success else "❌"
-        line = f"{status} {result.phase_name}: {result.duration_seconds:.1f}s"
+        parallel_indicator = " ⚡" if result.was_parallel else ""
+        line = f"{status} {result.phase_name}{parallel_indicator}: {result.duration_seconds:.1f}s"
         if result.loop_iterations > 1:
             line += f" ({result.loop_iterations} iterations)"
         if result.error:
@@ -548,8 +725,12 @@ def format_dsl_results_summary(workflow_name: str, results: list[DSLPhaseResult]
 
     total_time = sum(r.duration_seconds for r in results)
     success_count = sum(1 for r in results if r.success)
+    parallel_count = sum(1 for r in results if r.was_parallel)
     lines.append("=" * 40)
-    lines.append(f"Total: {success_count}/{len(results)} phases, {total_time:.1f}s")
+    summary = f"Total: {success_count}/{len(results)} phases, {total_time:.1f}s"
+    if parallel_count > 0:
+        summary += f" ({parallel_count} parallel)"
+    lines.append(summary)
 
     return "\n".join(lines)
 

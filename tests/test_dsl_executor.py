@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from adw.agent.models import AgentPromptRequest
 from adw.workflows.dsl import (
     LoopCondition,
     PhaseCondition,
@@ -19,14 +19,15 @@ from adw.workflows.dsl import (
 from adw.workflows.dsl_executor import (
     DSLExecutionContext,
     DSLPhaseResult,
+    build_parallel_groups,
     check_env_set,
     check_file_exists,
     check_git_changes,
     evaluate_condition,
+    execute_parallel_phases,
     format_dsl_results_summary,
     run_workflow_by_name,
 )
-
 
 # =============================================================================
 # DSLPhaseResult Tests
@@ -500,8 +501,6 @@ class TestPrototypeConfig:
         """Test that prototype functions are importable."""
         from adw.workflows.prototype import (
             PROTOTYPES,
-            PrototypeConfig,
-            PrototypeResult,
             get_prototype_config,
             list_prototypes,
         )
@@ -591,3 +590,358 @@ class TestAgentManagerDSLSupport:
         manager = AgentManager()
         assert hasattr(manager, "spawn_workflow")
         assert callable(manager.spawn_workflow)
+
+
+# =============================================================================
+# Parallel Execution Tests
+# =============================================================================
+
+
+class TestBuildParallelGroups:
+    """Tests for build_parallel_groups function."""
+
+    def test_no_parallel_phases(self) -> None:
+        """Test with no parallel_with references."""
+        phases = [
+            PhaseDefinition(name="plan", prompt="Plan"),
+            PhaseDefinition(name="implement", prompt="Implement"),
+            PhaseDefinition(name="test", prompt="Test"),
+        ]
+        groups = build_parallel_groups(phases)
+
+        # Each phase should be in its own group
+        assert len(groups) == 3
+        assert all(len(g) == 1 for g in groups)
+        assert groups[0][0].name == "plan"
+        assert groups[1][0].name == "implement"
+        assert groups[2][0].name == "test"
+
+    def test_two_parallel_phases(self) -> None:
+        """Test with two phases that should run in parallel."""
+        phases = [
+            PhaseDefinition(name="plan", prompt="Plan"),
+            PhaseDefinition(name="lint", prompt="Lint", parallel_with=["format"]),
+            PhaseDefinition(name="format", prompt="Format"),
+            PhaseDefinition(name="test", prompt="Test"),
+        ]
+        groups = build_parallel_groups(phases)
+
+        # plan, (lint+format), test
+        assert len(groups) == 3
+        assert len(groups[0]) == 1
+        assert groups[0][0].name == "plan"
+
+        # Second group should contain lint and format
+        assert len(groups[1]) == 2
+        parallel_names = {p.name for p in groups[1]}
+        assert parallel_names == {"lint", "format"}
+
+        assert len(groups[2]) == 1
+        assert groups[2][0].name == "test"
+
+    def test_three_parallel_phases(self) -> None:
+        """Test with three phases that should run in parallel."""
+        phases = [
+            PhaseDefinition(name="build", prompt="Build"),
+            PhaseDefinition(name="lint", prompt="Lint", parallel_with=["format", "typecheck"]),
+            PhaseDefinition(name="format", prompt="Format"),
+            PhaseDefinition(name="typecheck", prompt="Typecheck"),
+        ]
+        groups = build_parallel_groups(phases)
+
+        assert len(groups) == 2
+        assert len(groups[0]) == 1
+        assert groups[0][0].name == "build"
+
+        # Second group should contain lint, format, and typecheck
+        assert len(groups[1]) == 3
+        parallel_names = {p.name for p in groups[1]}
+        assert parallel_names == {"lint", "format", "typecheck"}
+
+    def test_multiple_parallel_groups(self) -> None:
+        """Test with multiple independent parallel groups."""
+        phases = [
+            PhaseDefinition(name="plan", prompt="Plan"),
+            PhaseDefinition(name="build_a", prompt="Build A", parallel_with=["build_b"]),
+            PhaseDefinition(name="build_b", prompt="Build B"),
+            PhaseDefinition(name="test_a", prompt="Test A", parallel_with=["test_b"]),
+            PhaseDefinition(name="test_b", prompt="Test B"),
+        ]
+        groups = build_parallel_groups(phases)
+
+        assert len(groups) == 3
+        assert len(groups[0]) == 1  # plan
+        assert len(groups[1]) == 2  # build_a, build_b
+        assert len(groups[2]) == 2  # test_a, test_b
+
+    def test_empty_phases(self) -> None:
+        """Test with empty phases list."""
+        groups = build_parallel_groups([])
+        assert groups == []
+
+    def test_single_phase(self) -> None:
+        """Test with single phase."""
+        phases = [PhaseDefinition(name="only", prompt="Only")]
+        groups = build_parallel_groups(phases)
+
+        assert len(groups) == 1
+        assert len(groups[0]) == 1
+        assert groups[0][0].name == "only"
+
+
+class TestExecuteParallelPhases:
+    """Tests for execute_parallel_phases function."""
+
+    def test_single_phase_no_threading(self, tmp_path: Path) -> None:
+        """Test that single phase doesn't use threading."""
+        mock_state = MagicMock()
+        mock_state.save = MagicMock()
+        mock_state.add_error = MagicMock()
+
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        phases = [
+            PhaseDefinition(name="single", prompt="Single phase"),
+        ]
+
+        # Mock prompt_with_retry to avoid actual execution
+        with patch("adw.workflows.dsl_executor.prompt_with_retry") as mock_prompt:
+            mock_prompt.return_value = MagicMock(
+                success=True,
+                output="Success",
+                error_message=None,
+            )
+
+            results, _ = execute_parallel_phases(
+                phases=phases,
+                context=context,
+            )
+
+            assert len(results) == 1
+            assert results[0].phase_name == "single"
+            # Single phase shouldn't be marked as parallel
+            assert results[0].was_parallel is False
+
+    def test_two_phases_parallel_execution(self, tmp_path: Path) -> None:
+        """Test that two phases execute in parallel."""
+        mock_state = MagicMock()
+        mock_state.save = MagicMock()
+        mock_state.add_error = MagicMock()
+
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        phases = [
+            PhaseDefinition(name="lint", prompt="Lint"),
+            PhaseDefinition(name="format", prompt="Format"),
+        ]
+
+        with patch("adw.workflows.dsl_executor.prompt_with_retry") as mock_prompt:
+            mock_prompt.return_value = MagicMock(
+                success=True,
+                output="Success",
+                error_message=None,
+            )
+
+            results, _ = execute_parallel_phases(
+                phases=phases,
+                context=context,
+            )
+
+            assert len(results) == 2
+            # Both should be marked as parallel
+            assert all(r.was_parallel for r in results)
+            # Results should be sorted by original phase order
+            assert results[0].phase_name == "lint"
+            assert results[1].phase_name == "format"
+
+    def test_parallel_with_failure(self, tmp_path: Path) -> None:
+        """Test parallel execution with one failing phase."""
+        mock_state = MagicMock()
+        mock_state.save = MagicMock()
+        mock_state.add_error = MagicMock()
+
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        phases = [
+            PhaseDefinition(name="lint", prompt="Lint"),
+            PhaseDefinition(name="format", prompt="Format"),
+        ]
+
+        def mock_response(request: AgentPromptRequest, max_retries: int = 2) -> MagicMock:
+            """Return success for lint, failure for format."""
+            result = MagicMock()
+            if "lint" in request.agent_name:
+                result.success = True
+                result.output = "Success"
+                result.error_message = None
+            else:
+                result.success = False
+                result.output = ""
+                result.error_message = "Format failed"
+            return result
+
+        with patch("adw.workflows.dsl_executor.prompt_with_retry", side_effect=mock_response):
+            results, _ = execute_parallel_phases(
+                phases=phases,
+                context=context,
+            )
+
+            assert len(results) == 2
+            lint_result = next(r for r in results if r.phase_name == "lint")
+            format_result = next(r for r in results if r.phase_name == "format")
+
+            assert lint_result.success is True
+            assert format_result.success is False
+            assert format_result.error == "Format failed"
+
+    def test_parallel_with_exception(self, tmp_path: Path) -> None:
+        """Test parallel execution with one phase throwing exception."""
+        mock_state = MagicMock()
+        mock_state.save = MagicMock()
+        mock_state.add_error = MagicMock()
+
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        phases = [
+            PhaseDefinition(name="lint", prompt="Lint"),
+            PhaseDefinition(name="crash", prompt="Crash"),
+        ]
+
+        def mock_response(request: AgentPromptRequest, max_retries: int = 2) -> MagicMock:
+            """Return success for lint, raise for crash."""
+            if "lint" in request.agent_name:
+                result = MagicMock()
+                result.success = True
+                result.output = "Success"
+                result.error_message = None
+                return result
+            else:
+                raise RuntimeError("Unexpected crash!")
+
+        with patch("adw.workflows.dsl_executor.prompt_with_retry", side_effect=mock_response):
+            results, _ = execute_parallel_phases(
+                phases=phases,
+                context=context,
+            )
+
+            assert len(results) == 2
+            lint_result = next(r for r in results if r.phase_name == "lint")
+            crash_result = next(r for r in results if r.phase_name == "crash")
+
+            assert lint_result.success is True
+            assert crash_result.success is False
+            assert "Unexpected crash" in crash_result.error
+
+
+class TestDSLPhaseResultParallel:
+    """Tests for parallel-related DSLPhaseResult fields."""
+
+    def test_was_parallel_default(self) -> None:
+        """Test that was_parallel defaults to False."""
+        result = DSLPhaseResult(phase_name="test", success=True)
+        assert result.was_parallel is False
+
+    def test_was_parallel_explicit(self) -> None:
+        """Test setting was_parallel explicitly."""
+        result = DSLPhaseResult(phase_name="test", success=True, was_parallel=True)
+        assert result.was_parallel is True
+
+
+class TestFormatSummaryParallel:
+    """Tests for format_dsl_results_summary with parallel phases."""
+
+    def test_format_with_parallel_phases(self) -> None:
+        """Test formatting results with parallel phases."""
+        results = [
+            DSLPhaseResult(phase_name="plan", success=True, duration_seconds=10.0),
+            DSLPhaseResult(phase_name="lint", success=True, duration_seconds=5.0, was_parallel=True),
+            DSLPhaseResult(phase_name="format", success=True, duration_seconds=3.0, was_parallel=True),
+            DSLPhaseResult(phase_name="test", success=True, duration_seconds=20.0),
+        ]
+        summary = format_dsl_results_summary("test-workflow", results)
+
+        # Check parallel indicator
+        assert "lint ⚡" in summary
+        assert "format ⚡" in summary
+        assert "plan:" in summary  # No indicator for non-parallel
+        assert "test:" in summary
+        assert "(2 parallel)" in summary
+
+    def test_format_without_parallel_phases(self) -> None:
+        """Test formatting results without parallel phases."""
+        results = [
+            DSLPhaseResult(phase_name="plan", success=True, duration_seconds=10.0),
+            DSLPhaseResult(phase_name="implement", success=True, duration_seconds=20.0),
+        ]
+        summary = format_dsl_results_summary("test-workflow", results)
+
+        # No parallel indicator
+        assert "⚡" not in summary
+        assert "parallel" not in summary
+
+
+class TestDSLExecutionContextThreadSafe:
+    """Tests for thread-safe DSLExecutionContext methods."""
+
+    def test_update_result_thread_safe(self, tmp_path: Path) -> None:
+        """Test that update_result is thread-safe."""
+        mock_state = MagicMock()
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        result = DSLPhaseResult(phase_name="test", success=True)
+        context.update_result("test", result)
+
+        assert context.phase_results["test"] == result
+
+    def test_get_result_thread_safe(self, tmp_path: Path) -> None:
+        """Test that get_result is thread-safe."""
+        mock_state = MagicMock()
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        result = DSLPhaseResult(phase_name="test", success=True)
+        context.phase_results["test"] = result
+
+        retrieved = context.get_result("test")
+        assert retrieved == result
+
+    def test_get_result_not_found(self, tmp_path: Path) -> None:
+        """Test get_result returns None for missing phase."""
+        mock_state = MagicMock()
+        context = DSLExecutionContext(
+            task_description="Test",
+            adw_id="test123",
+            worktree_path=tmp_path,
+            state=mock_state,
+        )
+
+        assert context.get_result("nonexistent") is None

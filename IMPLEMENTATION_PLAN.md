@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 10 (Workflow Customization)
-**Version:** 0.5.22
-**Status:** Phase 10 IN PROGRESS - Workflow DSL, CLI, and execution complete (P10-1 through P10-8). Total: 1283 tests passing (64 new DSL executor + 26 prototype workflow tests). Code quality: all ruff lint checks pass.
+**Version:** 0.5.23
+**Status:** Phase 10 COMPLETE - Workflow DSL, CLI, execution engine, and parallel phase execution all implemented. Total: 1300 tests passing (17 new parallel execution tests). Code quality: all ruff lint checks pass.
 
 ---
 
@@ -25,7 +25,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 7 - Entry Points | **COMPLETE** | **100%** |
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
-| 10 - Customization | **IN PROGRESS** | **90%** |
+| 10 - Customization | **COMPLETE** | **100%** |
 | 11 - Simplification | Not Started | 0% |
 
 **Existing Strengths:**
@@ -1219,7 +1219,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-10/customization.md`
-**Status:** 90% Complete - DSL, CLI, and execution engine implemented
+**Status:** ✅ COMPLETE (100%) - DSL, CLI, execution engine, and parallel phase execution all implemented
 
 ### What Exists
 - Simple, standard, sdlc workflows in `src/adw/workflows/`
@@ -1248,6 +1248,12 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Loop execution: until_success, until_tests_pass, fixed_count
   - Test integration with automatic retry context injection
   - Escalation report generation on exhausted retries
+  - **NEW:** Parallel phase execution with `parallel_with` support
+    - `build_parallel_groups()` groups phases for parallel execution
+    - `execute_parallel_phases()` runs multiple phases concurrently using ThreadPoolExecutor
+    - Thread-safe context updates with Lock
+    - Results sorted to match original phase order
+    - ⚡ indicator in summary for parallel phases
 - **NEW:** Prototype workflow execution (`src/adw/workflows/prototype.py`)
   - `run_prototype_workflow()` scaffolds applications
   - `PrototypeResult` dataclass for execution results
@@ -1282,7 +1288,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Add, remove, reorder phases (via YAML)
   - Conditional phases: `condition: tests_failed`, `condition: has_changes`
   - Loop phases: `loop: until_tests_pass`, `loop: until_success`
-  - Parallel execution: `parallel_with: [phase_name]` (defined, not yet executed)
+  - Parallel execution: `parallel_with: [phase_name]` ✅ fully implemented
   - **Files:** `src/adw/workflows/dsl.py` (PhaseCondition, LoopCondition enums)
 
 - [x] **P10-3** Implement prompt templating
@@ -1321,8 +1327,18 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Updated `AgentManager.spawn_workflow()` to auto-detect DSL workflows
   - **Files:** `src/adw/workflows/dsl_executor.py`, `src/adw/agent/manager.py`
 
+- [x] **P10-9** Implement parallel phase execution
+  - Added `build_parallel_groups()` to group phases with `parallel_with` references
+  - Added `execute_parallel_phases()` using `concurrent.futures.ThreadPoolExecutor`
+  - Thread-safe `DSLExecutionContext` with Lock for concurrent updates
+  - `was_parallel` flag in `DSLPhaseResult` tracks which phases ran in parallel
+  - Results sorted to maintain original phase order
+  - Handles failures in parallel phases gracefully
+  - ⚡ indicator in summary output for parallel phases
+  - **Files:** `src/adw/workflows/dsl_executor.py`
+
 ### Tests Added
-- `tests/test_dsl_executor.py` - 38 tests covering:
+- `tests/test_dsl_executor.py` - 55 tests covering:
   - DSLPhaseResult dataclass (3 tests)
   - DSLExecutionContext dataclass (3 tests)
   - Condition checks: git changes, file exists, env vars (9 tests)
@@ -1332,6 +1348,11 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Workflow definition integration (5 tests)
   - Prototype config integration (5 tests)
   - Agent manager DSL support (2 tests)
+  - **NEW:** Parallel groups building (6 tests)
+  - **NEW:** Parallel phase execution (4 tests)
+  - **NEW:** Parallel result fields (2 tests)
+  - **NEW:** Format summary with parallel (2 tests)
+  - **NEW:** Thread-safe context methods (3 tests)
 
 - `tests/test_prototype_workflow.py` - 26 tests covering:
   - PrototypeConfig dataclass (1 test)
