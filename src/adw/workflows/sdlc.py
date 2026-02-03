@@ -1,5 +1,12 @@
 """Full SDLC workflow: Plan → Implement → Test → Review → Document → Release.
 
+DEPRECATED: This module is deprecated in favor of the adaptive workflow.
+Use `from adw.workflows.adaptive import run_adaptive_workflow` with
+`complexity=TaskComplexity.FULL` instead.
+
+The adaptive workflow consolidates simple, standard, and sdlc workflows
+into a single workflow that auto-detects task complexity.
+
 This workflow integrates with the testing and retry modules to provide:
 - Automatic test framework detection and execution
 - Smart retry with context injection on test failures
@@ -11,6 +18,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -37,6 +45,7 @@ ModelType = Literal["haiku", "sonnet", "opus"]
 
 class SDLCPhase(Enum):
     """SDLC workflow phases."""
+
     PLAN = "plan"
     IMPLEMENT = "implement"
     TEST = "test"
@@ -48,6 +57,7 @@ class SDLCPhase(Enum):
 @dataclass
 class PhaseConfig:
     """Configuration for an SDLC phase."""
+
     name: SDLCPhase
     prompt_template: str
     model: ModelType = "sonnet"
@@ -59,51 +69,54 @@ class PhaseConfig:
 @dataclass
 class SDLCConfig:
     """Full SDLC workflow configuration."""
+
     phases: list[PhaseConfig] = field(default_factory=list)
 
     @classmethod
     def default(cls) -> SDLCConfig:
         """Create default SDLC configuration."""
-        return cls(phases=[
-            PhaseConfig(
-                name=SDLCPhase.PLAN,
-                prompt_template="/plan {task}",
-                model="opus",
-                timeout_seconds=900,
-            ),
-            PhaseConfig(
-                name=SDLCPhase.IMPLEMENT,
-                prompt_template="/implement {task}",
-                model="sonnet",
-                timeout_seconds=1200,
-            ),
-            PhaseConfig(
-                name=SDLCPhase.TEST,
-                prompt_template="/test {task}",
-                model="sonnet",
-                timeout_seconds=600,
-            ),
-            PhaseConfig(
-                name=SDLCPhase.REVIEW,
-                prompt_template="/review {task}",
-                model="opus",
-                timeout_seconds=600,
-            ),
-            PhaseConfig(
-                name=SDLCPhase.DOCUMENT,
-                prompt_template="/document {task}",
-                model="haiku",
-                required=False,
-                timeout_seconds=300,
-            ),
-            PhaseConfig(
-                name=SDLCPhase.RELEASE,
-                prompt_template="/release {task}",
-                model="sonnet",
-                required=False,
-                timeout_seconds=300,
-            ),
-        ])
+        return cls(
+            phases=[
+                PhaseConfig(
+                    name=SDLCPhase.PLAN,
+                    prompt_template="/plan {task}",
+                    model="opus",
+                    timeout_seconds=900,
+                ),
+                PhaseConfig(
+                    name=SDLCPhase.IMPLEMENT,
+                    prompt_template="/implement {task}",
+                    model="sonnet",
+                    timeout_seconds=1200,
+                ),
+                PhaseConfig(
+                    name=SDLCPhase.TEST,
+                    prompt_template="/test {task}",
+                    model="sonnet",
+                    timeout_seconds=600,
+                ),
+                PhaseConfig(
+                    name=SDLCPhase.REVIEW,
+                    prompt_template="/review {task}",
+                    model="opus",
+                    timeout_seconds=600,
+                ),
+                PhaseConfig(
+                    name=SDLCPhase.DOCUMENT,
+                    prompt_template="/document {task}",
+                    model="haiku",
+                    required=False,
+                    timeout_seconds=300,
+                ),
+                PhaseConfig(
+                    name=SDLCPhase.RELEASE,
+                    prompt_template="/release {task}",
+                    model="sonnet",
+                    required=False,
+                    timeout_seconds=300,
+                ),
+            ]
+        )
 
     @classmethod
     def quick(cls) -> SDLCConfig:
@@ -116,6 +129,7 @@ class SDLCConfig:
 @dataclass
 class PhaseResult:
     """Result of executing a single phase."""
+
     phase: SDLCPhase
     success: bool
     output: str = ""
@@ -127,6 +141,7 @@ class PhaseResult:
 @dataclass
 class TestValidationConfig:
     """Configuration for test validation in SDLC workflow."""
+
     enabled: bool = True
     max_test_retries: int = 3  # Number of implement-test cycles to try
     timeout_seconds: int = 300
@@ -135,10 +150,7 @@ class TestValidationConfig:
 
 def get_current_commit() -> str | None:
     """Get current git commit hash."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        capture_output=True, text=True
-    )
+    result = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
@@ -235,6 +247,7 @@ def execute_phase_with_retry(
         PhaseResult with execution outcome.
     """
     import time
+
     start_time = time.time()
 
     phase_name = phase_config.name.value
@@ -246,6 +259,7 @@ def execute_phase_with_retry(
     if inject_expertise and phase_name in ("implement", "plan"):
         try:
             from ..learning.expertise import inject_expertise_into_prompt
+
             prompt = inject_expertise_into_prompt(
                 prompt=prompt,
                 position="end",
@@ -318,6 +332,7 @@ def execute_phase(
 ) -> PhaseResult:
     """Execute a single SDLC phase."""
     import time
+
     start_time = time.time()
 
     phase_name = phase_config.name.value
@@ -327,6 +342,7 @@ def execute_phase(
     if inject_expertise and phase_name in ("implement", "plan"):
         try:
             from ..learning.expertise import inject_expertise_into_prompt
+
             prompt = inject_expertise_into_prompt(
                 prompt=prompt,
                 position="end",
@@ -391,6 +407,7 @@ def run_sdlc_workflow(
     on_progress: Callable[[str], None] | None = None,
     skip_optional: bool = False,
     test_validation_config: TestValidationConfig | None = None,
+    _skip_deprecation_warning: bool = False,  # Internal flag to suppress warning
 ) -> tuple[bool, list[PhaseResult]]:
     """Execute full SDLC workflow with test validation.
 
@@ -410,8 +427,18 @@ def run_sdlc_workflow(
 
     Returns:
         Tuple of (overall_success, list of phase results)
+
+    DEPRECATED: Use run_adaptive_workflow with complexity=TaskComplexity.FULL instead.
     """
     import time
+
+    if not _skip_deprecation_warning:
+        warnings.warn(
+            "run_sdlc_workflow is deprecated. Use run_adaptive_workflow with "
+            "complexity=TaskComplexity.FULL instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     adw_id = adw_id or generate_adw_id()
     config = config or SDLCConfig.default()
@@ -539,10 +566,7 @@ def run_sdlc_workflow(
                         current_retry_context = validation_result.retry_context
 
                     # Find IMPLEMENT phase index and jump back
-                    implement_idx = next(
-                        (idx for idx, p in enumerate(phases) if p.name == SDLCPhase.IMPLEMENT),
-                        None
-                    )
+                    implement_idx = next((idx for idx, p in enumerate(phases) if p.name == SDLCPhase.IMPLEMENT), None)
                     if implement_idx is not None:
                         i = implement_idx
                         continue

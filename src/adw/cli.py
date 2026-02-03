@@ -1056,7 +1056,7 @@ def github_process(issue_number: int, dry_run: bool) -> None:
     """
     from .agent.utils import generate_adw_id
     from .integrations.github import add_issue_comment, get_issue
-    from .workflows.standard import run_standard_workflow
+    from .workflows.adaptive import run_adaptive_workflow
 
     console.print(f"[bold cyan]Processing GitHub issue #{issue_number}[/bold cyan]")
     console.print()
@@ -1097,12 +1097,12 @@ def github_process(issue_number: int, dry_run: bool) -> None:
         adw_id,
     )
 
-    # Run workflow
+    # Run workflow - uses adaptive workflow with auto-detection
     worktree_name = f"issue-{issue_number}-{adw_id}"
-    console.print(f"[dim]Running standard workflow in worktree: {worktree_name}[/dim]")
+    console.print(f"[dim]Running adaptive workflow in worktree: {worktree_name}[/dim]")
     console.print()
 
-    success = run_standard_workflow(
+    success, _ = run_adaptive_workflow(
         task_description=f"{issue.title}\n\n{issue.body}",
         worktree_name=worktree_name,
         adw_id=adw_id,
@@ -3418,30 +3418,26 @@ def resume_task_cmd(task_id: str, checkpoint: str | None, workflow: str) -> None
     console.print(f"[dim]Starting {workflow} workflow...[/dim]")
     console.print()
 
-    if workflow == "simple":
-        from .workflows.simple import run_simple_workflow
+    # Import adaptive workflow
+    from .workflows.adaptive import TaskComplexity, run_adaptive_workflow
 
-        success = run_simple_workflow(
-            task_description=description,
-            worktree_name=worktree_path,
-            adw_id=task_id,
-        )
-    elif workflow == "sdlc":
-        from .workflows.sdlc import run_sdlc_workflow
+    # Map legacy workflow names to complexity
+    complexity_mapping: dict[str, TaskComplexity | None] = {
+        "simple": TaskComplexity.MINIMAL,
+        "standard": TaskComplexity.STANDARD,
+        "sdlc": TaskComplexity.FULL,
+        "adaptive": None,  # Auto-detect
+    }
 
-        success = run_sdlc_workflow(
-            task_description=description,
-            worktree_name=worktree_path,
-            adw_id=task_id,
-        )
-    else:
-        from .workflows.standard import run_standard_workflow
-
-        success = run_standard_workflow(
-            task_description=description,
-            worktree_name=worktree_path,
-            adw_id=task_id,
-        )
+    # Use adaptive workflow with appropriate complexity
+    complexity = complexity_mapping.get(workflow)
+    success, _ = run_adaptive_workflow(
+        task_description=description,
+        worktree_name=worktree_path,
+        adw_id=task_id,
+        complexity=complexity,
+        explicit_workflow=workflow if workflow not in complexity_mapping else None,
+    )
 
     if success:
         console.print()

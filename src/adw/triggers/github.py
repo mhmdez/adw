@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
-from typing import Any
 
 from rich.console import Console
 
@@ -14,28 +12,9 @@ from ..integrations.issue_parser import (
     merge_template_with_labels,
     parse_issue_body,
 )
-from ..workflows.standard import run_standard_workflow
+from ..workflows.adaptive import TaskComplexity, run_adaptive_workflow
 
 console = Console()
-
-
-def _get_workflow_runner(workflow: str) -> Callable[..., Any]:
-    """Get the appropriate workflow runner function.
-
-    Args:
-        workflow: Workflow name (simple, standard, sdlc).
-
-    Returns:
-        Workflow runner function.
-    """
-    if workflow == "simple":
-        from ..workflows.simple import run_simple_workflow
-        return run_simple_workflow
-    elif workflow == "sdlc":
-        from ..workflows.sdlc import run_sdlc_workflow
-        return run_sdlc_workflow
-    else:
-        return run_standard_workflow
 
 
 def process_github_issues(
@@ -104,30 +83,27 @@ def process_github_issues(
         # Run workflow
         worktree_name = f"issue-{issue.number}-{adw_id}"
 
-        # Different workflows have different signatures
-        if workflow == "sdlc":
-            from ..workflows.sdlc import run_sdlc_workflow
-            # sdlc returns tuple (success, results)
-            success, _ = run_sdlc_workflow(
-                task_description=task_description,
-                worktree_name=worktree_name,
-                adw_id=adw_id,
-            )
-        elif workflow == "simple":
-            from ..workflows.simple import run_simple_workflow
-            success = run_simple_workflow(
-                task_description=task_description,
-                worktree_name=worktree_name,
-                adw_id=adw_id,
-                model=model,
-            )
-        else:
-            success = run_standard_workflow(
-                task_description=task_description,
-                worktree_name=worktree_name,
-                adw_id=adw_id,
-                model=model,
-            )
+        # Map legacy workflow names to complexity levels
+        complexity_mapping: dict[str, TaskComplexity | None] = {
+            "simple": TaskComplexity.MINIMAL,
+            "standard": TaskComplexity.STANDARD,
+            "sdlc": TaskComplexity.FULL,
+        }
+        complexity = complexity_mapping.get(workflow)
+
+        # Map priority to string format
+        priority_str = template.priority.value if template.priority else None
+
+        # Use unified adaptive workflow for all task types
+        success, _ = run_adaptive_workflow(
+            task_description=task_description,
+            worktree_name=worktree_name,
+            adw_id=adw_id,
+            complexity=complexity,
+            priority=priority_str,
+            explicit_workflow=workflow if workflow not in complexity_mapping else None,
+            model_override=model,  # type: ignore
+        )
 
         # Update issue with result
         if success:

@@ -343,7 +343,7 @@ class TestTaskCreateRequest:
         request = TaskCreateRequest.from_dict(data)
 
         assert request.description == "Test task"
-        assert request.workflow == "standard"
+        assert request.workflow == "adaptive"  # Default is now adaptive
         assert request.priority == "p1"
         assert request.model == "sonnet"
 
@@ -383,10 +383,11 @@ class TestTaskCreateRequest:
         assert "description is required" in errors
 
     def test_validate_invalid_workflow(self) -> None:
-        """Test validation fails with invalid workflow."""
-        request = TaskCreateRequest(description="Test", workflow="invalid")
+        """Test validation fails with invalid workflow (non-identifier)."""
+        request = TaskCreateRequest(description="Test", workflow="has spaces!")
         errors = request.validate()
-        assert any("workflow must be one of" in e for e in errors)
+        # Workflow validation now allows any valid identifier or known workflow
+        assert any("workflow" in e.lower() for e in errors)
 
     def test_validate_invalid_priority(self) -> None:
         """Test validation fails with invalid priority."""

@@ -70,9 +70,7 @@ class LinearConfig:
     api_key: str
     team_id: str | None = None
     poll_interval: int = 60
-    filter_states: list[str] = field(
-        default_factory=lambda: ["Backlog", "Todo", "Triage"]
-    )
+    filter_states: list[str] = field(default_factory=lambda: ["Backlog", "Todo", "Triage"])
     sync_comments: bool = True
     label_filter: list[str] = field(default_factory=list)
 
@@ -127,9 +125,7 @@ class LinearConfig:
             api_key=linear_config["api_key"],
             team_id=linear_config.get("team_id"),
             poll_interval=linear_config.get("poll_interval", 60),
-            filter_states=linear_config.get(
-                "filter_states", ["Backlog", "Todo", "Triage"]
-            ),
+            filter_states=linear_config.get("filter_states", ["Backlog", "Todo", "Triage"]),
             sync_comments=linear_config.get("sync_comments", True),
             label_filter=linear_config.get("label_filter", []),
         )
@@ -233,34 +229,29 @@ class LinearIssue:
             assignee_id=data.get("assignee_id"),
             team_id=data.get("team_id", ""),
             adw_id=data.get("adw_id"),
-            created_at=(
-                datetime.fromisoformat(data["created_at"])
-                if data.get("created_at")
-                else None
-            ),
-            updated_at=(
-                datetime.fromisoformat(data["updated_at"])
-                if data.get("updated_at")
-                else None
-            ),
+            created_at=(datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None),
+            updated_at=(datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None),
         )
 
     def get_workflow_or_default(self) -> str:
-        """Get workflow based on priority and labels."""
-        # Check for workflow labels
+        """Get workflow based on priority and labels.
+
+        Returns 'adaptive' by default, which auto-detects complexity.
+        Legacy workflow labels (simple, standard, sdlc) are still supported
+        for backward compatibility.
+        """
+        # Check for explicit workflow labels (backward compatibility)
         for label in self.labels:
             label_lower = label.lower()
-            if label_lower in ("sdlc", "workflow:sdlc"):
+            if label_lower in ("sdlc", "workflow:sdlc", "full", "workflow:full"):
                 return "sdlc"
-            if label_lower in ("simple", "workflow:simple"):
+            if label_lower in ("simple", "workflow:simple", "minimal", "workflow:minimal"):
                 return "simple"
             if label_lower in ("standard", "workflow:standard"):
                 return "standard"
 
-        # Priority-based defaults
-        if self.priority in (1, 2):  # Urgent or High
-            return "sdlc"
-        return "standard"
+        # Default to adaptive (auto-detects complexity from task description)
+        return "adaptive"
 
     def get_model_or_default(self) -> str:
         """Get model based on priority and labels."""
@@ -334,13 +325,9 @@ class LinearClient:
             "Content-Type": "application/json",
         }
 
-        body = json.dumps({"query": query, "variables": variables or {}}).encode(
-            "utf-8"
-        )
+        body = json.dumps({"query": query, "variables": variables or {}}).encode("utf-8")
 
-        req = urllib.request.Request(
-            self.API_URL, data=body, headers=headers, method="POST"
-        )
+        req = urllib.request.Request(self.API_URL, data=body, headers=headers, method="POST")
 
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
@@ -602,7 +589,7 @@ class LinearClient:
 
         mutation = f"""
         mutation {{
-            issueUpdate(id: "{issue_id}", input: {{ {', '.join(updates)} }}) {{
+            issueUpdate(id: "{issue_id}", input: {{ {", ".join(updates)} }}) {{
                 success
             }}
         }}
@@ -703,18 +690,14 @@ def parse_linear_issue(issue_data: dict[str, Any]) -> LinearIssue:
     created_at = None
     if issue_data.get("createdAt"):
         try:
-            created_at = datetime.fromisoformat(
-                issue_data["createdAt"].replace("Z", "+00:00")
-            )
+            created_at = datetime.fromisoformat(issue_data["createdAt"].replace("Z", "+00:00"))
         except (ValueError, TypeError):
             pass
 
     updated_at = None
     if issue_data.get("updatedAt"):
         try:
-            updated_at = datetime.fromisoformat(
-                issue_data["updatedAt"].replace("Z", "+00:00")
-            )
+            updated_at = datetime.fromisoformat(issue_data["updatedAt"].replace("Z", "+00:00"))
         except (ValueError, TypeError):
             pass
 
@@ -938,7 +921,7 @@ def process_linear_issues(
         Number of issues processed.
     """
     from ..agent.utils import generate_adw_id
-    from ..workflows.standard import run_standard_workflow
+    from ..workflows.adaptive import TaskComplexity, run_adaptive_workflow
 
     watcher = LinearWatcher(config)
     issues = watcher.get_pending_issues()
@@ -949,6 +932,14 @@ def process_linear_issues(
 
     processed = 0
 
+    # Map legacy workflow names to complexity
+    complexity_mapping: dict[str, TaskComplexity | None] = {
+        "simple": TaskComplexity.MINIMAL,
+        "standard": TaskComplexity.STANDARD,
+        "sdlc": TaskComplexity.FULL,
+        "adaptive": None,  # Auto-detect
+    }
+
     for issue in issues:
         adw_id = generate_adw_id()
         workflow = issue.get_workflow_or_default()
@@ -956,9 +947,7 @@ def process_linear_issues(
         priority = issue.get_priority_string()
 
         console.print(f"[cyan]Processing: {issue.identifier} - {issue.title}[/cyan]")
-        console.print(
-            f"[dim]  Workflow: {workflow}, Model: {model}, Priority: {priority}[/dim]"
-        )
+        console.print(f"[dim]  Workflow: {workflow}, Model: {model}, Priority: {priority}[/dim]")
 
         if dry_run:
             console.print(f"[yellow]DRY RUN: Would process with ADW ID {adw_id}[/yellow]")
@@ -978,32 +967,17 @@ def process_linear_issues(
         # Create worktree name
         worktree_name = f"linear-{adw_id}"
 
-        # Run appropriate workflow
+        # Run adaptive workflow with appropriate complexity
         try:
-            if workflow == "sdlc":
-                from ..workflows.sdlc import run_sdlc_workflow
-
-                success, _ = run_sdlc_workflow(
-                    task_description=task_description,
-                    worktree_name=worktree_name,
-                    adw_id=adw_id,
-                )
-            elif workflow == "simple":
-                from ..workflows.simple import run_simple_workflow
-
-                success = run_simple_workflow(
-                    task_description=task_description,
-                    worktree_name=worktree_name,
-                    adw_id=adw_id,
-                    model=model,
-                )
-            else:
-                success = run_standard_workflow(
-                    task_description=task_description,
-                    worktree_name=worktree_name,
-                    adw_id=adw_id,
-                    model=model,
-                )
+            complexity = complexity_mapping.get(workflow)
+            success, _ = run_adaptive_workflow(
+                task_description=task_description,
+                worktree_name=worktree_name,
+                adw_id=adw_id,
+                complexity=complexity,
+                priority=priority,
+                model_override=model,  # type: ignore
+            )
 
             # Update Linear with result
             if success:
@@ -1068,7 +1042,7 @@ def sync_linear_issue(
         True if successful.
     """
     from ..agent.utils import generate_adw_id
-    from ..workflows.standard import run_standard_workflow
+    from ..workflows.adaptive import TaskComplexity, run_adaptive_workflow
 
     client = LinearClient(config.api_key)
 
@@ -1120,6 +1094,7 @@ def sync_linear_issue(
     adw_id = generate_adw_id()
     workflow = issue.get_workflow_or_default()
     model = issue.get_model_or_default()
+    priority = issue.get_priority_string()
 
     console.print(f"[cyan]Syncing: {issue.identifier} - {issue.title}[/cyan]")
     console.print(f"[dim]  Workflow: {workflow}, Model: {model}[/dim]")
@@ -1139,31 +1114,24 @@ def sync_linear_issue(
 
     worktree_name = f"linear-{adw_id}"
 
+    # Map legacy workflow names to complexity
+    complexity_mapping: dict[str, TaskComplexity | None] = {
+        "simple": TaskComplexity.MINIMAL,
+        "standard": TaskComplexity.STANDARD,
+        "sdlc": TaskComplexity.FULL,
+        "adaptive": None,  # Auto-detect
+    }
+
     try:
-        if workflow == "sdlc":
-            from ..workflows.sdlc import run_sdlc_workflow
-
-            success, _ = run_sdlc_workflow(
-                task_description=task_description,
-                worktree_name=worktree_name,
-                adw_id=adw_id,
-            )
-        elif workflow == "simple":
-            from ..workflows.simple import run_simple_workflow
-
-            success = run_simple_workflow(
-                task_description=task_description,
-                worktree_name=worktree_name,
-                adw_id=adw_id,
-                model=model,
-            )
-        else:
-            success = run_standard_workflow(
-                task_description=task_description,
-                worktree_name=worktree_name,
-                adw_id=adw_id,
-                model=model,
-            )
+        complexity = complexity_mapping.get(workflow)
+        success, _ = run_adaptive_workflow(
+            task_description=task_description,
+            worktree_name=worktree_name,
+            adw_id=adw_id,
+            complexity=complexity,
+            priority=priority,
+            model_override=model,  # type: ignore
+        )
 
         if success:
             watcher.mark_issue_completed(issue)

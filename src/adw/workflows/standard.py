@@ -1,9 +1,18 @@
-"""Standard workflow: Plan → Implement → Update."""
+"""Standard workflow: Plan → Implement → Update.
+
+DEPRECATED: This module is deprecated in favor of the adaptive workflow.
+Use `from adw.workflows.adaptive import run_adaptive_workflow` with
+`complexity=TaskComplexity.STANDARD` instead.
+
+The adaptive workflow consolidates simple, standard, and sdlc workflows
+into a single workflow that auto-detects task complexity.
+"""
 
 from __future__ import annotations
 
 import re
 import sys
+import warnings
 from pathlib import Path
 
 import click
@@ -24,7 +33,16 @@ def run_standard_workflow(
     adw_id: str | None = None,
     model: str = "sonnet",
 ) -> bool:
-    """Execute standard plan-implement workflow."""
+    """Execute standard plan-implement workflow.
+
+    DEPRECATED: Use run_adaptive_workflow with complexity=TaskComplexity.STANDARD instead.
+    """
+    warnings.warn(
+        "run_standard_workflow is deprecated. Use run_adaptive_workflow with "
+        "complexity=TaskComplexity.STANDARD instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     adw_id = adw_id or generate_adw_id()
     tasks_file = Path("tasks.md")
 

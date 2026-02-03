@@ -236,17 +236,17 @@ class TestNotionTask:
         assert task.get_workflow_or_default() == "sdlc"
 
     def test_get_workflow_or_default_from_priority(self) -> None:
-        """Test deriving workflow from priority."""
-        # High priority -> sdlc
+        """Test deriving workflow - defaults to adaptive for auto-detection."""
+        # All priorities default to adaptive now (auto-detects complexity)
         task = NotionTask(page_id="p1", title="t1", priority="p0")
-        assert task.get_workflow_or_default() == "sdlc"
+        assert task.get_workflow_or_default() == "adaptive"
 
         task = NotionTask(page_id="p1", title="t1", priority="p1")
-        assert task.get_workflow_or_default() == "sdlc"
+        assert task.get_workflow_or_default() == "adaptive"
 
-        # Normal priority -> standard
+        # Normal priority -> adaptive
         task = NotionTask(page_id="p1", title="t1", priority="p2")
-        assert task.get_workflow_or_default() == "standard"
+        assert task.get_workflow_or_default() == "adaptive"
 
     def test_get_model_or_default_explicit(self) -> None:
         """Test getting explicitly set model."""

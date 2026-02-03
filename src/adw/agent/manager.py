@@ -16,12 +16,14 @@ from .utils import generate_adw_id
 logger = logging.getLogger(__name__)
 
 # Built-in Python workflows that can be run as modules
-BUILTIN_PYTHON_WORKFLOWS = {"simple", "standard", "sdlc"}
+# Note: "adaptive" is the primary workflow that handles simple/standard/sdlc
+BUILTIN_PYTHON_WORKFLOWS = {"simple", "standard", "sdlc", "adaptive"}
 
 
 @dataclass
 class AgentProcess:
     """Represents a running agent."""
+
     adw_id: str
     pid: int
     process: subprocess.Popen
@@ -50,21 +52,25 @@ class AgentManager:
         self,
         task_description: str,
         worktree_name: str | None = None,
-        workflow: str = "standard",
+        workflow: str = "adaptive",
         model: str = "sonnet",
         adw_id: str | None = None,
+        priority: str | None = None,
     ) -> str:
         """Spawn a workflow agent.
 
-        Supports both built-in Python workflows (simple, standard, sdlc)
-        and DSL-defined workflows loaded from YAML files.
+        By default, uses the adaptive workflow which automatically detects
+        task complexity and runs appropriate phases. Also supports explicit
+        workflow selection (simple, standard, sdlc) and DSL-defined workflows.
 
         Args:
             task_description: What to do
             worktree_name: Git worktree name
-            workflow: Workflow name - can be a built-in workflow
-                (simple, standard, sdlc) or a DSL workflow name
+            workflow: Workflow name - "adaptive" (default, auto-detects complexity),
+                "simple", "standard", "sdlc", or a DSL workflow name
             model: haiku, sonnet, opus
+            adw_id: Optional ADW ID (generated if not provided)
+            priority: Optional task priority (p0-p3) for complexity detection
 
         Returns:
             ADW ID of spawned agent
@@ -74,27 +80,35 @@ class AgentManager:
         raw_worktree = worktree_name or f"task-{adw_id}"
         worktree = raw_worktree.replace(" ", "-").lower()
 
+        # Map legacy workflow names to adaptive complexity levels
+        complexity_mapping = {
+            "simple": "minimal",
+            "standard": "standard",
+            "sdlc": "full",
+        }
+
         # Determine if this is a DSL workflow or built-in Python workflow
         is_dsl_workflow = workflow not in BUILTIN_PYTHON_WORKFLOWS
         if is_dsl_workflow:
             # Check if DSL workflow exists
             try:
                 from ..workflows.dsl import get_workflow
+
                 dsl_workflow = get_workflow(workflow)
                 if dsl_workflow is None:
                     logger.warning(
-                        "DSL workflow '%s' not found, falling back to standard",
+                        "DSL workflow '%s' not found, falling back to adaptive",
                         workflow,
                     )
-                    workflow = "standard"
+                    workflow = "adaptive"
                     is_dsl_workflow = False
             except Exception as e:
                 logger.warning(
-                    "Error loading DSL workflow '%s': %s, falling back to standard",
+                    "Error loading DSL workflow '%s': %s, falling back to adaptive",
                     workflow,
                     e,
                 )
-                workflow = "standard"
+                workflow = "adaptive"
                 is_dsl_workflow = False
 
         # Build command based on workflow type
@@ -114,20 +128,61 @@ class AgentManager:
                 task_description,
                 "--verbose",
             ]
-        else:
-            # Use built-in Python workflow modules
+        elif workflow == "adaptive":
+            # Use adaptive workflow with auto-detection
             cmd = [
                 sys.executable,
                 "-m",
-                f"adw.workflows.{workflow}",
+                "adw.workflows.adaptive",
                 "--adw-id",
                 adw_id,
                 "--worktree-name",
                 worktree,
                 "--task",
                 task_description,
+                "--complexity",
+                "auto",
                 "--model",
                 model,
+                "--verbose",
+            ]
+            if priority:
+                cmd.extend(["--priority", priority])
+        elif workflow in complexity_mapping:
+            # Use adaptive workflow with explicit complexity for legacy workflow names
+            cmd = [
+                sys.executable,
+                "-m",
+                "adw.workflows.adaptive",
+                "--adw-id",
+                adw_id,
+                "--worktree-name",
+                worktree,
+                "--task",
+                task_description,
+                "--complexity",
+                complexity_mapping[workflow],
+                "--model",
+                model,
+                "--verbose",
+            ]
+        else:
+            # Fallback to adaptive workflow
+            cmd = [
+                sys.executable,
+                "-m",
+                "adw.workflows.adaptive",
+                "--adw-id",
+                adw_id,
+                "--worktree-name",
+                worktree,
+                "--task",
+                task_description,
+                "--complexity",
+                "auto",
+                "--model",
+                model,
+                "--verbose",
             ]
 
         # Spawn process
@@ -168,9 +223,12 @@ class AgentManager:
 
         cmd = [
             "claude",
-            "--model", model,
-            "--output-format", "stream-json",
-            "--print", prompt,
+            "--model",
+            model,
+            "--output-format",
+            "stream-json",
+            "--print",
+            prompt,
         ]
 
         # Create output directory

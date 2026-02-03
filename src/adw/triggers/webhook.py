@@ -265,10 +265,7 @@ def _load_rate_limits() -> dict[str, RateLimitEntry]:
     try:
         with open(RATE_LIMIT_FILE) as f:
             data = json.load(f)
-        return {
-            k: RateLimitEntry(**v)
-            for k, v in data.items()
-        }
+        return {k: RateLimitEntry(**v) for k, v in data.items()}
     except (json.JSONDecodeError, KeyError):
         return {}
 
@@ -396,9 +393,9 @@ class TaskCreateRequest:
     """Request to create a new task via API."""
 
     description: str
-    workflow: str = "standard"  # simple, standard, sdlc
+    workflow: str = "adaptive"  # adaptive (auto), simple, standard, sdlc, or DSL workflow name
     repo: str | None = None
-    priority: str = "p1"  # p0, p1, p2
+    priority: str = "p1"  # p0, p1, p2, p3
     tags: list[str] = field(default_factory=list)
     callback_url: str | None = None  # URL to POST completion notification
     model: str = "sonnet"  # sonnet, opus, haiku
@@ -409,7 +406,7 @@ class TaskCreateRequest:
         """Create from request dictionary."""
         return cls(
             description=data.get("description", ""),
-            workflow=data.get("workflow", "standard"),
+            workflow=data.get("workflow", "adaptive"),
             repo=data.get("repo"),
             priority=data.get("priority", "p1"),
             tags=data.get("tags", []),
@@ -425,21 +422,20 @@ class TaskCreateRequest:
         if not self.description or not self.description.strip():
             errors.append("description is required")
 
-        if self.workflow not in ("simple", "standard", "sdlc"):
-            errors.append("workflow must be one of: simple, standard, sdlc")
+        # Allow adaptive, legacy workflows, or any DSL workflow name
+        valid_workflows = ("adaptive", "simple", "standard", "sdlc")
+        if self.workflow not in valid_workflows and not self.workflow.replace("-", "_").isidentifier():
+            errors.append(f"workflow must be one of {valid_workflows} or a valid DSL workflow name")
 
-        if self.priority not in ("p0", "p1", "p2"):
-            errors.append("priority must be one of: p0, p1, p2")
+        if self.priority not in ("p0", "p1", "p2", "p3"):
+            errors.append("priority must be one of: p0, p1, p2, p3")
 
         if self.model not in ("sonnet", "opus", "haiku"):
             errors.append("model must be one of: sonnet, opus, haiku")
 
         if self.callback_url:
             # Basic URL validation
-            if not (
-                self.callback_url.startswith("http://")
-                or self.callback_url.startswith("https://")
-            ):
+            if not (self.callback_url.startswith("http://") or self.callback_url.startswith("https://")):
                 errors.append("callback_url must be a valid HTTP(S) URL")
 
         return errors
@@ -791,11 +787,14 @@ def create_webhook_app() -> Any:
             signature = request.headers.get("X-Hub-Signature-256", "")
             body = await request.body()
 
-            expected = "sha256=" + hmac.new(
-                secret.encode(),
-                body,
-                hashlib.sha256,
-            ).hexdigest()
+            expected = (
+                "sha256="
+                + hmac.new(
+                    secret.encode(),
+                    body,
+                    hashlib.sha256,
+                ).hexdigest()
+            )
 
             if not hmac.compare_digest(signature, expected):
                 raise HTTPException(status_code=401, detail="Invalid signature")
@@ -959,9 +958,10 @@ def _trigger_workflow_async(
     task: str,
     body: str,
     adw_id: str,
-    workflow: str = "standard",
+    workflow: str = "adaptive",
     model: str = "sonnet",
     worktree_name: str | None = None,
+    priority: str | None = None,
 ) -> None:
     """Trigger workflow in background process.
 
@@ -969,9 +969,10 @@ def _trigger_workflow_async(
         task: Task description.
         body: Additional context/body.
         adw_id: ADW task ID.
-        workflow: Workflow type (simple, standard, sdlc).
+        workflow: Workflow type (adaptive, simple, standard, sdlc, or DSL name).
         model: Model to use (sonnet, opus, haiku).
         worktree_name: Optional worktree name.
+        priority: Optional task priority (p0-p3) for complexity detection.
     """
     import subprocess
     import sys
@@ -979,11 +980,19 @@ def _trigger_workflow_async(
     full_task = f"{task}\n\n{body}" if body else task
     wt_name = worktree_name or f"api-{adw_id}"
 
-    subprocess.Popen(
-        [
+    # Map legacy workflow names to adaptive complexity
+    complexity_mapping = {
+        "simple": "minimal",
+        "standard": "standard",
+        "sdlc": "full",
+    }
+
+    if workflow in complexity_mapping or workflow == "adaptive":
+        # Use adaptive workflow with complexity detection
+        cmd = [
             sys.executable,
             "-m",
-            f"adw.workflows.{workflow}",
+            "adw.workflows.adaptive",
             "--adw-id",
             adw_id,
             "--worktree-name",
@@ -992,9 +1001,30 @@ def _trigger_workflow_async(
             full_task,
             "--model",
             model,
-        ],
-        start_new_session=True,
-    )
+            "--complexity",
+            complexity_mapping.get(workflow, "auto"),
+            "--verbose",
+        ]
+        if priority:
+            cmd.extend(["--priority", priority])
+    else:
+        # DSL workflow - use dsl_executor
+        cmd = [
+            sys.executable,
+            "-m",
+            "adw.workflows.dsl_executor",
+            "--workflow",
+            workflow,
+            "--adw-id",
+            adw_id,
+            "--worktree-name",
+            wt_name,
+            "--task",
+            full_task,
+            "--verbose",
+        ]
+
+    subprocess.Popen(cmd, start_new_session=True)
 
 
 # =============================================================================

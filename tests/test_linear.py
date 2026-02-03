@@ -290,30 +290,30 @@ class TestLinearIssue:
         assert issue.get_workflow_or_default() == "standard"
 
     def test_get_workflow_or_default_from_priority(self) -> None:
-        """Test workflow defaults based on priority."""
-        # Urgent priority -> SDLC
+        """Test workflow defaults to adaptive for auto-detection."""
+        # All priorities default to adaptive now (auto-detects complexity)
         issue = LinearIssue(
             id="1", identifier="T-1", title="Test", priority=1
         )
-        assert issue.get_workflow_or_default() == "sdlc"
+        assert issue.get_workflow_or_default() == "adaptive"
 
-        # High priority -> SDLC
+        # High priority -> adaptive
         issue = LinearIssue(
             id="1", identifier="T-1", title="Test", priority=2
         )
-        assert issue.get_workflow_or_default() == "sdlc"
+        assert issue.get_workflow_or_default() == "adaptive"
 
-        # Medium priority -> standard
+        # Medium priority -> adaptive
         issue = LinearIssue(
             id="1", identifier="T-1", title="Test", priority=3
         )
-        assert issue.get_workflow_or_default() == "standard"
+        assert issue.get_workflow_or_default() == "adaptive"
 
-        # No priority -> standard
+        # No priority -> adaptive
         issue = LinearIssue(
             id="1", identifier="T-1", title="Test", priority=0
         )
-        assert issue.get_workflow_or_default() == "standard"
+        assert issue.get_workflow_or_default() == "adaptive"
 
     def test_get_model_or_default_from_labels(self) -> None:
         """Test model detection from labels."""

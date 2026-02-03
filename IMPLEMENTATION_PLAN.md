@@ -5,7 +5,7 @@
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
 **Version:** 0.5.27
-**Status:** Phase 11 IN PROGRESS - P11-2 (plugin simplification), P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages), P11-6 (help & discoverability) complete. Added `adw examples` command with 30+ categorized examples and docs/examples/ guides. Total: 1466 tests passing. Code quality: all ruff lint checks pass.
+**Status:** Phase 11 IN PROGRESS - P11-1 (adaptive workflow), P11-2 (plugin simplification), P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages), P11-6 (help & discoverability) complete. Unified workflows into single adaptive SDLC with auto-complexity detection. Total: 1528 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -26,7 +26,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
 | 10 - Customization | **COMPLETE** | **100%** |
-| 11 - Simplification | **IN PROGRESS** | **71%** (5/7 tasks) |
+| 11 - Simplification | **IN PROGRESS** | **86%** (6/7 tasks) |
 
 **Existing Strengths:**
 - Agent subsystem is production-ready (executor, manager, state, worktree, ports)
@@ -1373,14 +1373,21 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-11/simplification.md`
-**Status:** In Progress (71% - P11-2, P11-3, P11-4, P11-5, P11-6 complete)
+**Status:** In Progress (86% - P11-1, P11-2, P11-3, P11-4, P11-5, P11-6 complete)
 
 ### Tasks
 
-- [ ] **P11-1** Consolidate workflows
-  - Merge simple/prototype/standard into single adaptive SDLC
-  - Adjust behavior based on task complexity
-  - Eliminate multi-workflow distinction
+- [x] **P11-1** Consolidate workflows ✅
+  - Created `src/adw/workflows/adaptive.py` (680+ lines) with unified adaptive workflow
+  - `TaskComplexity` enum: MINIMAL (replaces simple), STANDARD (replaces standard), FULL (replaces sdlc)
+  - `detect_complexity()` function with regex pattern matching for auto-detection
+  - `run_adaptive_workflow()` main entry point with backward compatibility
+  - Phase configuration per complexity level with model selection
+  - Updated all integration points: agent/manager.py, triggers/cron.py, triggers/github.py, triggers/webhook.py, integrations/linear.py, integrations/notion.py, cli.py
+  - Added deprecation warnings to simple.py, standard.py, sdlc.py
+  - Created backward-compatible wrapper functions (run_simple_workflow, run_standard_workflow, run_sdlc_workflow)
+  - **Files:** `src/adw/workflows/adaptive.py`, `src/adw/workflows/__init__.py`, updates to 8+ integration files
+  - **Tests:** `tests/test_adaptive_workflow.py` - 62 tests covering complexity detection, config, backward compatibility
 
 - [x] **P11-2** Simplify plugin system ✅
   - Removed entire plugin system (884 lines of code eliminated)

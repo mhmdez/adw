@@ -252,13 +252,16 @@ class NotionTask:
         )
 
     def get_workflow_or_default(self) -> str:
-        """Get workflow, defaulting based on priority."""
+        """Get workflow, defaulting to adaptive for auto-detection.
+
+        If an explicit workflow is set, it will be used. Otherwise,
+        returns 'adaptive' to auto-detect complexity from task description.
+        Legacy workflow names (simple, standard, sdlc) are still supported.
+        """
         if self.workflow:
             return self.workflow
-        # High priority tasks get full SDLC
-        if self.priority in ("p0", "p1"):
-            return "sdlc"
-        return "standard"
+        # Default to adaptive (auto-detects complexity)
+        return "adaptive"
 
     def get_model_or_default(self) -> str:
         """Get model, defaulting based on priority."""
@@ -721,7 +724,7 @@ def process_notion_tasks(
         Number of tasks processed.
     """
     from ..agent.utils import generate_adw_id
-    from ..workflows.standard import run_standard_workflow
+    from ..workflows.adaptive import TaskComplexity, run_adaptive_workflow
 
     watcher = NotionWatcher(config)
     tasks = watcher.get_pending_tasks()
@@ -731,6 +734,14 @@ def process_notion_tasks(
         return 0
 
     processed = 0
+
+    # Map legacy workflow names to complexity
+    complexity_mapping: dict[str, TaskComplexity | None] = {
+        "simple": TaskComplexity.MINIMAL,
+        "standard": TaskComplexity.STANDARD,
+        "sdlc": TaskComplexity.FULL,
+        "adaptive": None,  # Auto-detect
+    }
 
     for task in tasks:
         adw_id = generate_adw_id()
@@ -757,32 +768,17 @@ def process_notion_tasks(
         # Create worktree name
         worktree_name = f"notion-{adw_id}"
 
-        # Run appropriate workflow
+        # Run adaptive workflow with appropriate complexity
         try:
-            if workflow == "sdlc":
-                from ..workflows.sdlc import run_sdlc_workflow
-
-                success, _ = run_sdlc_workflow(
-                    task_description=task_description,
-                    worktree_name=worktree_name,
-                    adw_id=adw_id,
-                )
-            elif workflow == "simple":
-                from ..workflows.simple import run_simple_workflow
-
-                success = run_simple_workflow(
-                    task_description=task_description,
-                    worktree_name=worktree_name,
-                    adw_id=adw_id,
-                    model=model,
-                )
-            else:
-                success = run_standard_workflow(
-                    task_description=task_description,
-                    worktree_name=worktree_name,
-                    adw_id=adw_id,
-                    model=model,
-                )
+            complexity = complexity_mapping.get(workflow)
+            success, _ = run_adaptive_workflow(
+                task_description=task_description,
+                worktree_name=worktree_name,
+                adw_id=adw_id,
+                complexity=complexity,
+                priority=task.priority,
+                model_override=model,  # type: ignore
+            )
 
             # Update Notion with result
             if success:

@@ -25,7 +25,7 @@ class CronConfig:
     tasks_file: Path = field(default_factory=lambda: Path("tasks.md"))
     poll_interval: float = 5.0  # seconds between task checks
     max_concurrent: int = 3  # max simultaneous agents
-    default_workflow: str = "standard"
+    default_workflow: str = "adaptive"  # Adaptive workflow auto-detects complexity
     default_model: str = "sonnet"
     auto_start: bool = True  # start tasks automatically
 
@@ -94,6 +94,26 @@ class CronDaemon:
 
         return None
 
+    def _get_task_workflow(self, task) -> str:
+        """Get the workflow to use for a task.
+
+        Priority order:
+        1. Task-level tag: {sdlc}, {simple}, {bug-fix}, etc.
+        2. Configuration default: self.config.default_workflow
+
+        Args:
+            task: Task object with tags.
+
+        Returns:
+            Workflow name to use.
+        """
+        # Check task-level workflow tag first
+        if task.workflow:
+            return task.workflow
+
+        # Fall back to config default
+        return self.config.default_workflow
+
     def _spawn_task(self, task) -> str | None:
         """Spawn an agent for a task.
 
@@ -102,6 +122,7 @@ class CronDaemon:
         """
         adw_id = task.adw_id or generate_adw_id()
         model = task.model  # Uses tags to determine model
+        workflow = self._get_task_workflow(task)  # Respects task-level overrides
 
         # Mark task as in progress
         mark_in_progress(self.config.tasks_file, task.description, adw_id)
@@ -110,9 +131,10 @@ class CronDaemon:
             spawned_id = self.manager.spawn_workflow(
                 task_description=task.description,
                 worktree_name=task.worktree_name,
-                workflow=self.config.default_workflow,
+                workflow=workflow,
                 model=model,
                 adw_id=adw_id,
+                priority=task.priority,  # Pass priority for adaptive complexity detection
             )
 
             self._task_agents[task.description] = spawned_id
@@ -121,6 +143,7 @@ class CronDaemon:
                 adw_id=spawned_id,
                 description=task.description,
                 model=model,
+                workflow=workflow,
             )
 
             return spawned_id
@@ -221,10 +244,12 @@ class CronDaemon:
 
                         # Update state manager
                         if self._state_manager:
-                            self._state_manager.add_task({
-                                "adw_id": self._task_agents.get(task.description),
-                                "description": task.description[:100],
-                            })
+                            self._state_manager.add_task(
+                                {
+                                    "adw_id": self._task_agents.get(task.description),
+                                    "description": task.description[:100],
+                                }
+                            )
 
                 # Update pending count
                 if self._state_manager:
@@ -256,6 +281,7 @@ class CronDaemon:
 
         # Initialize state manager
         from ..daemon_state import DaemonStateManager
+
         self._state_manager = DaemonStateManager()
         self._state_manager.start()
 
@@ -318,11 +344,12 @@ async def run_daemon(
     # Subscribe to events for logging
     def on_event(event: str, data: dict) -> None:
         if event == "task_started":
-            print(f"[cron] 🚀 Started: {data['description']} ({data['adw_id']})")
+            workflow = data.get("workflow", "standard")
+            print(f"[cron] 🚀 Started: {data['description']} ({data['adw_id']}, {workflow})")
         elif event == "task_completed":
             print(f"[cron] ✅ Completed: {data['description']}")
         elif event == "task_failed":
-            stderr = data.get('stderr', '')[:200] if data.get('stderr') else ''
+            stderr = data.get("stderr", "")[:200] if data.get("stderr") else ""
             print(f"[cron] ❌ Failed: {data['description']} - {data.get('error') or data.get('return_code')}")
             if stderr:
                 print(f"[cron]    stderr: {stderr}")
@@ -338,11 +365,13 @@ async def run_daemon(
     # Desktop notifications (macOS)
     if notifications:
         from ..notifications import NotificationHandler
+
         notifier = NotificationHandler()
         daemon.subscribe(notifier.on_event)
 
     # Webhooks (from environment)
     from ..webhooks import load_webhook_from_env
+
     webhook_handler = load_webhook_from_env()
     if webhook_handler:
         daemon.subscribe(webhook_handler.on_event)
