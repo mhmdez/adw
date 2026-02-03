@@ -3426,6 +3426,489 @@ def plan_cmd(description: str | None, planner: str, show: bool) -> None:
 
 
 # =============================================================================
+# Reporting & Analytics Commands (Phase 9)
+# =============================================================================
+
+
+@main.group()
+def report() -> None:
+    """Generate and view reports.
+
+    View daily summaries, weekly digests, metrics, costs, and trends.
+    """
+    pass
+
+
+@report.command("daily")
+@click.option("--date", "-d", type=str, help="Date (YYYY-MM-DD, default: today)")
+@click.option("--save", "-s", is_flag=True, help="Save report to file")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def report_daily(date: str | None, save: bool, as_json: bool) -> None:
+    """Generate daily summary report.
+
+    Shows tasks completed, commits, costs, and time saved for a day.
+
+    \\b
+    Examples:
+        adw report daily                    # Today's summary
+        adw report daily -d 2026-02-01      # Specific date
+        adw report daily --save             # Save to file
+        adw report daily --json             # JSON output
+    """
+    import json as json_lib
+    from datetime import datetime as dt
+
+    from .reports import generate_daily_summary, save_daily_summary
+
+    if date:
+        try:
+            report_date = dt.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            console.print(f"[red]Invalid date format: {date}[/red]")
+            console.print("[dim]Use YYYY-MM-DD format[/dim]")
+            return
+    else:
+        report_date = dt.now()
+
+    summary = generate_daily_summary(report_date)
+
+    if as_json:
+        click.echo(json_lib.dumps(summary.to_dict(), indent=2, default=str))
+        return
+
+    if save:
+        output_path = save_daily_summary(summary)
+        console.print(f"[green]✓ Report saved to {output_path}[/green]")
+        console.print()
+
+    # Display the report
+    console.print(summary.to_markdown())
+
+
+@report.command("weekly")
+@click.option("--date", "-d", type=str, help="Any date in the week (YYYY-MM-DD)")
+@click.option("--save", "-s", is_flag=True, help="Save report to file")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def report_weekly(date: str | None, save: bool, as_json: bool) -> None:
+    """Generate weekly digest report.
+
+    Aggregates daily summaries with week-over-week comparison.
+
+    \\b
+    Examples:
+        adw report weekly                   # Current week
+        adw report weekly -d 2026-01-20     # Week containing Jan 20
+        adw report weekly --save            # Save to file
+    """
+    import json as json_lib
+    from datetime import datetime as dt
+
+    from .reports import generate_weekly_digest, save_weekly_digest
+
+    if date:
+        try:
+            report_date = dt.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            console.print(f"[red]Invalid date format: {date}[/red]")
+            console.print("[dim]Use YYYY-MM-DD format[/dim]")
+            return
+    else:
+        report_date = dt.now()
+
+    digest = generate_weekly_digest(report_date)
+
+    if as_json:
+        click.echo(json_lib.dumps(digest.to_dict(), indent=2, default=str))
+        return
+
+    if save:
+        output_path = save_weekly_digest(digest)
+        console.print(f"[green]✓ Report saved to {output_path}[/green]")
+        console.print()
+
+    # Display the report
+    console.print(digest.to_markdown())
+
+
+@report.command("trends")
+@click.option("--days", "-d", type=int, default=30, help="Number of days to analyze (default: 30)")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def report_trends(days: int, as_json: bool) -> None:
+    """Analyze metric trends over time.
+
+    Shows success rate, duration, cost, and retry trends with sparklines.
+    Includes anomaly detection and alerts.
+
+    \\b
+    Examples:
+        adw report trends                   # Last 30 days
+        adw report trends -d 14             # Last 2 weeks
+        adw report trends --json            # JSON output
+    """
+    import json as json_lib
+
+    from .reports import generate_trend_report
+
+    report = generate_trend_report(period_days=days)
+
+    if as_json:
+        click.echo(json_lib.dumps(report.to_dict(), indent=2, default=str))
+        return
+
+    console.print(report.to_markdown())
+
+
+@report.command("sparklines")
+@click.option("--days", "-d", type=int, default=14, help="Number of days (default: 14)")
+def report_sparklines(days: int) -> None:
+    """Show compact sparkline summary.
+
+    Quick overview of key metrics with ASCII sparklines.
+
+    \\b
+    Examples:
+        adw report sparklines
+        adw report sparklines -d 7
+    """
+    from .reports import get_sparkline_summary
+
+    summary = get_sparkline_summary(period_days=days)
+
+    if not summary:
+        console.print("[yellow]No data available for sparklines[/yellow]")
+        console.print("[dim]Run some tasks to generate metrics[/dim]")
+        return
+
+    console.print(f"[bold cyan]Metrics Overview[/bold cyan] [dim](last {days} days)[/dim]")
+    console.print()
+    console.print(summary)
+
+
+@main.command("metrics")
+@click.argument("task_id", required=False)
+@click.option("--summary", "-s", is_flag=True, help="Show summary statistics")
+@click.option("--recent", "-r", type=int, help="Show N most recent tasks")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def metrics_cmd(task_id: str | None, summary: bool, recent: int | None, as_json: bool) -> None:
+    """View task metrics.
+
+    Query the metrics database for task performance data.
+
+    \\b
+    Examples:
+        adw metrics abc12345                # Specific task
+        adw metrics --summary               # Overall statistics
+        adw metrics --recent 10             # Last 10 tasks
+        adw metrics --json                  # JSON output
+    """
+    import json as json_lib
+
+    from .reports import get_metrics_db
+
+    db = get_metrics_db()
+
+    if task_id:
+        # Get specific task metrics
+        metrics = db.get_metrics(task_id)
+        if not metrics:
+            console.print(f"[red]No metrics found for task: {task_id}[/red]")
+            return
+
+        if as_json:
+            click.echo(json_lib.dumps(metrics.to_dict(), indent=2, default=str))
+            return
+
+        console.print(f"[bold cyan]Task Metrics: {task_id}[/bold cyan]")
+        console.print()
+        console.print(f"[bold]Description:[/bold] {metrics.description or 'N/A'}")
+        console.print(f"[bold]Workflow:[/bold] {metrics.workflow}")
+        console.print(f"[bold]Status:[/bold] {metrics.status}")
+        console.print(f"[bold]Duration:[/bold] {metrics.duration_str}")
+        console.print(f"[bold]Retries:[/bold] {metrics.total_retries}")
+        console.print(
+            f"[bold]Tokens:[/bold] {metrics.total_tokens:,} "
+            f"(in: {metrics.total_input_tokens:,}, out: {metrics.total_output_tokens:,})"
+        )
+        console.print(f"[bold]Commits:[/bold] {metrics.commits_generated}")
+        console.print(f"[bold]Files Modified:[/bold] {metrics.files_modified}")
+        console.print(f"[bold]Lines Changed:[/bold] +{metrics.lines_added} / -{metrics.lines_removed}")
+        console.print(f"[bold]Est. Cost:[/bold] ${metrics.calculate_cost():.4f}")
+
+        if metrics.phases:
+            console.print()
+            console.print("[bold]Phases:[/bold]")
+            for phase in metrics.phases:
+                status = "✓" if phase.success else "✗"
+                console.print(f"  {status} {phase.name}: {phase.duration_seconds:.1f}s, {phase.retries} retries")
+
+    elif summary:
+        # Show summary statistics
+        stats = db.get_summary_stats()
+
+        if as_json:
+            click.echo(json_lib.dumps(stats, indent=2, default=str))
+            return
+
+        console.print("[bold cyan]Metrics Summary[/bold cyan]")
+        console.print()
+        console.print(f"[bold]Total Tasks:[/bold] {stats['total_tasks']}")
+        console.print(f"[bold]Completed:[/bold] {stats['completed']}")
+        console.print(f"[bold]Failed:[/bold] {stats['failed']}")
+        console.print(f"[bold]Success Rate:[/bold] {stats['success_rate']:.1f}%")
+        console.print()
+        console.print(f"[bold]Total Duration:[/bold] {stats['total_duration_seconds'] / 3600:.1f}h")
+        console.print(f"[bold]Avg Duration:[/bold] {stats['avg_duration_seconds'] / 60:.1f}m")
+        console.print(f"[bold]Total Retries:[/bold] {stats['total_retries']}")
+        console.print(f"[bold]Avg Retries:[/bold] {stats['avg_retries']:.1f}")
+        console.print()
+        console.print(f"[bold]Total Tokens:[/bold] {stats['total_input_tokens'] + stats['total_output_tokens']:,}")
+        console.print(f"[bold]Total Commits:[/bold] {stats['total_commits']}")
+        console.print(f"[bold]Files Modified:[/bold] {stats['total_files_modified']}")
+
+    elif recent:
+        # Show recent tasks
+        metrics_list = db.get_recent_metrics(limit=recent)
+
+        if not metrics_list:
+            console.print("[yellow]No metrics recorded yet[/yellow]")
+            return
+
+        if as_json:
+            click.echo(json_lib.dumps([m.to_dict() for m in metrics_list], indent=2, default=str))
+            return
+
+        console.print(f"[bold cyan]Recent Tasks[/bold cyan] [dim]({len(metrics_list)} shown)[/dim]")
+        console.print()
+        console.print("| Task ID  | Status    | Duration | Retries | Tokens |")
+        console.print("|----------|-----------|----------|---------|--------|")
+        for m in metrics_list:
+            status = "✓" if m.status == "completed" else "✗"
+            console.print(
+                f"| {m.task_id[:8]} | {status} {m.status[:7]} | "
+                f"{m.duration_str:>8} | {m.total_retries:>7} | {m.total_tokens:>6} |"
+            )
+
+    else:
+        # Show help
+        console.print("[bold cyan]Metrics Commands[/bold cyan]")
+        console.print()
+        console.print("  [cyan]adw metrics <task_id>[/cyan]    View metrics for a specific task")
+        console.print("  [cyan]adw metrics --summary[/cyan]    Show overall statistics")
+        console.print("  [cyan]adw metrics --recent 10[/cyan]  Show last 10 tasks")
+        console.print()
+        console.print("[dim]Use --json flag for JSON output[/dim]")
+
+
+@main.command("costs")
+@click.option(
+    "--period",
+    "-p",
+    type=click.Choice(["day", "week", "month", "all"]),
+    default="week",
+    help="Time period to analyze",
+)
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+def costs_cmd(period: str, as_json: bool) -> None:
+    """View API cost estimates.
+
+    Shows estimated costs based on token usage and Anthropic pricing.
+
+    \\b
+    Examples:
+        adw costs                    # This week's costs
+        adw costs -p day             # Today's costs
+        adw costs -p month           # This month's costs
+        adw costs --json             # JSON output
+    """
+    import json as json_lib
+    from datetime import datetime as dt
+    from datetime import timedelta
+
+    from .reports import get_metrics_db
+    from .reports.daily import PRICING
+
+    db = get_metrics_db()
+
+    # Calculate date range
+    now = dt.now()
+    if period == "day":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        period_name = "Today"
+    elif period == "week":
+        start_date = now - timedelta(days=7)
+        period_name = "Last 7 Days"
+    elif period == "month":
+        start_date = now - timedelta(days=30)
+        period_name = "Last 30 Days"
+    else:
+        start_date = dt(2020, 1, 1)
+        period_name = "All Time"
+
+    # Get stats for period
+    stats = db.get_summary_stats(since=start_date)
+
+    # Calculate costs by model (assuming Sonnet as default)
+    input_tokens = stats["total_input_tokens"]
+    output_tokens = stats["total_output_tokens"]
+
+    sonnet_cost = (input_tokens / 1_000_000 * PRICING["sonnet"]["input"]) + (
+        output_tokens / 1_000_000 * PRICING["sonnet"]["output"]
+    )
+    opus_cost = (input_tokens / 1_000_000 * PRICING["opus"]["input"]) + (
+        output_tokens / 1_000_000 * PRICING["opus"]["output"]
+    )
+    haiku_cost = (input_tokens / 1_000_000 * PRICING["haiku"]["input"]) + (
+        output_tokens / 1_000_000 * PRICING["haiku"]["output"]
+    )
+
+    result = {
+        "period": period_name,
+        "total_tasks": stats["total_tasks"],
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "estimated_cost_sonnet": sonnet_cost,
+        "estimated_cost_opus": opus_cost,
+        "estimated_cost_haiku": haiku_cost,
+        "cost_per_task_sonnet": sonnet_cost / stats["total_tasks"] if stats["total_tasks"] > 0 else 0,
+    }
+
+    if as_json:
+        click.echo(json_lib.dumps(result, indent=2, default=str))
+        return
+
+    console.print(f"[bold cyan]Cost Estimates: {period_name}[/bold cyan]")
+    console.print()
+    console.print(f"[bold]Tasks:[/bold] {stats['total_tasks']}")
+    console.print(f"[bold]Tokens:[/bold] {input_tokens + output_tokens:,}")
+    console.print(f"  Input:  {input_tokens:,}")
+    console.print(f"  Output: {output_tokens:,}")
+    console.print()
+    console.print("[bold]Estimated Costs (by model):[/bold]")
+    console.print(f"  Sonnet 3.5: ${sonnet_cost:.2f}")
+    console.print(f"  Opus:       ${opus_cost:.2f}")
+    console.print(f"  Haiku:      ${haiku_cost:.2f}")
+    console.print()
+    if stats["total_tasks"] > 0:
+        console.print(f"[dim]Cost per task (Sonnet): ${sonnet_cost / stats['total_tasks']:.4f}[/dim]")
+
+
+@main.group()
+def alerts() -> None:
+    """Notification channel management.
+
+    Configure Slack/Discord notifications for task events.
+    """
+    pass
+
+
+@alerts.command("add")
+@click.argument("name")
+@click.argument("webhook_url")
+@click.option(
+    "--type", "-t",
+    type=click.Choice(["slack", "discord"]),
+    required=True,
+    help="Channel type",
+)
+@click.option(
+    "--events", "-e",
+    multiple=True,
+    type=click.Choice(["task_start", "task_complete", "task_failed", "daily_summary", "weekly_digest"]),
+    help="Events to notify on (default: all)",
+)
+def notify_add(name: str, webhook_url: str, type: str, events: tuple[str, ...]) -> None:
+    """Add a notification channel.
+
+    \\b
+    Examples:
+        adw alerts add my-slack https://hooks.slack.com/... -t slack
+        adw alerts add my-discord https://discord.com/api/... -t discord
+        adw alerts add alerts https://... -t slack -e task_failed
+    """
+    from .reports import add_channel
+
+    add_channel(name, type, webhook_url, list(events) if events else None)
+    console.print(f"[green]✓ Added notification channel: {name}[/green]")
+
+
+@alerts.command("remove")
+@click.argument("name")
+def notify_remove(name: str) -> None:
+    """Remove a notification channel.
+
+    \\b
+    Examples:
+        adw alerts remove my-slack
+    """
+    from .reports import remove_channel
+
+    if remove_channel(name):
+        console.print(f"[green]✓ Removed channel: {name}[/green]")
+    else:
+        console.print(f"[red]Channel not found: {name}[/red]")
+
+
+@alerts.command("list")
+def notify_list() -> None:
+    """List configured notification channels."""
+    from .reports import list_channels
+
+    channels = list_channels()
+
+    if not channels:
+        console.print("[yellow]No notification channels configured[/yellow]")
+        console.print("[dim]Use 'adw alerts add' to add a channel[/dim]")
+        return
+
+    console.print("[bold cyan]Notification Channels[/bold cyan]")
+    console.print()
+    for ch in channels:
+        status = "[green]enabled[/green]" if ch["enabled"] else "[red]disabled[/red]"
+        events = ", ".join(ch["events"]) if ch["events"] else "all events"
+        console.print(f"[bold]{ch['name']}[/bold] ({ch['type']}) - {status}")
+        console.print(f"  [dim]Events: {events}[/dim]")
+        console.print()
+
+
+@alerts.command("test")
+@click.argument("name")
+def notify_test(name: str) -> None:
+    """Send a test notification to a channel.
+
+    \\b
+    Examples:
+        adw alerts test my-slack
+    """
+    from .reports import test_channel
+
+    console.print(f"[dim]Sending test notification to {name}...[/dim]")
+
+    if test_channel(name):
+        console.print("[green]✓ Test notification sent successfully[/green]")
+    else:
+        console.print("[red]✗ Failed to send test notification[/red]")
+        console.print("[dim]Check the webhook URL and try again[/dim]")
+
+
+@alerts.command("enable")
+@click.option("--on/--off", default=True, help="Enable or disable all notifications")
+def notify_enable(on: bool) -> None:
+    """Enable or disable all notifications.
+
+    \\b
+    Examples:
+        adw alerts enable          # Enable notifications
+        adw alerts enable --off    # Disable notifications
+    """
+    from .reports import enable_notifications
+
+    enable_notifications(on)
+    status = "enabled" if on else "disabled"
+    console.print(f"[green]✓ Notifications {status}[/green]")
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 

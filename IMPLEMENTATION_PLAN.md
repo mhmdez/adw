@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 6 (Multi-Repo - NOT STARTED)
-**Version:** 0.5.12
-**Status:** Phase 5 COMPLETE - specialized planners (/plan_fastapi, /plan_react, /plan_nextjs, /plan_supabase) and auto-detect `adw plan` CLI. Total: 730 tests passing. Code quality: all ruff lint errors fixed, line length increased to 120.
+**Version:** 0.5.13
+**Status:** Phase 9 COMPLETE - reporting & analytics (daily/weekly reports, trends, metrics, costs, notifications). Total: 791 tests passing. Code quality: all ruff lint errors fixed.
 
 ---
 
@@ -24,7 +24,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 6 - Multi-Repo | Not Started | 0% |
 | 7 - Entry Points | Partial | 30% |
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
-| 9 - Reporting | Not Started | 0% |
+| 9 - Reporting | **COMPLETE** | **100%** |
 | 10 - Customization | Partial | 20% |
 | 11 - Simplification | Not Started | 0% |
 
@@ -58,6 +58,13 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 - **NEW:** BackendExpert (FastAPI, Supabase, REST APIs)
 - **NEW:** AIExpert (LLM integration, prompts, agents)
 - **NEW:** Expert auto-selection from task keywords and file patterns
+- **NEW:** Daily summary reports with task counts, costs, time saved
+- **NEW:** Weekly digest with week-over-week comparison
+- **NEW:** Trend analysis with sparklines and anomaly detection
+- **NEW:** Metrics database (`~/.adw/metrics.db`)
+- **NEW:** Cost tracking with Anthropic pricing tiers
+- **NEW:** Notification system (Slack/Discord webhooks)
+- **NEW:** CLI commands: report daily/weekly/trends, metrics, costs, alerts
 - GitHub integration (basic) works
 
 ---
@@ -849,43 +856,117 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-9/reporting.md`
-**Status:** Not Started
+**Status:** ✅ COMPLETE (100%)
+
+### What Exists
+- Complete reports module (`src/adw/reports/`)
+- Daily summary reports with task counts, commits, costs, time saved
+- Weekly digest with week-over-week comparison
+- Trend analysis with sparklines and anomaly detection
+- Metrics database at `~/.adw/metrics.db`
+- Notification system with Slack/Discord webhooks
+- CLI commands: `adw report daily/weekly/trends/sparklines`, `adw metrics`, `adw costs`, `adw alerts`
+- 61 tests for reports module
 
 ### Tasks
 
-- [ ] **P9-1** Create `src/adw/reports/daily.py`
-  - Generate at midnight (configurable)
-  - Metrics: completed/failed/in-progress counts, commits, PRs, estimated time saved
+- [x] **P9-1** Create `src/adw/reports/daily.py`
+  - `DailySummary` dataclass with all metrics
+  - `generate_daily_summary()` function
+  - `save_daily_summary()` to `.adw/reports/daily-{date}.md`
+  - Anthropic pricing for cost estimation
+  - Time saved estimation heuristics
+  - **Files:** `src/adw/reports/daily.py`
 
-- [ ] **P9-2** Add `adw report daily` CLI
+- [x] **P9-2** Add `adw report daily` CLI
+  - `adw report daily` - Generate today's summary
+  - `adw report daily -d 2026-02-01` - Specific date
+  - `adw report daily --save` - Save to file
+  - `adw report daily --json` - JSON output
+  - **Files:** `src/adw/cli.py`
 
-- [ ] **P9-3** Create weekly digest with trend analysis
-  - Week-over-week comparison
-  - Highlight best/worst performing tasks
+- [x] **P9-3** Create weekly digest with trend analysis
+  - `WeeklyDigest` dataclass with all metrics
+  - `generate_weekly_digest()` aggregates daily summaries
+  - Week-over-week comparison (tasks, cost, success rate)
+  - Best/worst task identification
+  - **Files:** `src/adw/reports/weekly.py`
 
-- [ ] **P9-4** Add `adw report weekly` CLI
+- [x] **P9-4** Add `adw report weekly` CLI
+  - `adw report weekly` - Current week's digest
+  - `adw report weekly -d 2026-01-20` - Specific week
+  - `adw report weekly --save` - Save to file
+  - **Files:** `src/adw/cli.py`
 
-- [ ] **P9-5** Create metrics database `~/.adw/metrics.db`
-  - Per-task: duration per phase, retry count, token usage, commits
+- [x] **P9-5** Create metrics database `~/.adw/metrics.db`
+  - `MetricsDB` class with SQLite backend
+  - `TaskMetrics` dataclass with all task data
+  - `PhaseMetrics` for per-phase tracking
+  - Daily aggregates table for fast queries
+  - Thread-safe connection pooling
+  - **Files:** `src/adw/reports/metrics.py`
 
-- [ ] **P9-6** Add `adw metrics <task_id>` CLI
+- [x] **P9-6** Add `adw metrics <task_id>` CLI
+  - `adw metrics abc12345` - View specific task metrics
+  - `adw metrics --summary` - Overall statistics
+  - `adw metrics --recent 10` - Last N tasks
+  - **Files:** `src/adw/cli.py`
 
-- [ ] **P9-7** Implement cost tracking
-  - Calculate API costs using Anthropic pricing
-  - Input/output token pricing tiers
-  - Daily/weekly/monthly totals
+- [x] **P9-7** Implement cost tracking
+  - Anthropic pricing: Sonnet ($3/$15), Opus ($15/$75), Haiku ($0.25/$1.25)
+  - Per-task cost calculation
+  - Daily/weekly/monthly aggregation
+  - **Files:** `src/adw/reports/daily.py`, `src/adw/reports/metrics.py`
 
-- [ ] **P9-8** Add `adw costs --period [week|month]` CLI
+- [x] **P9-8** Add `adw costs --period [week|month]` CLI
+  - `adw costs` - This week's costs
+  - `adw costs -p day` - Today's costs
+  - `adw costs -p month` - Last 30 days
+  - Cost breakdown by model tier
+  - **Files:** `src/adw/cli.py`
 
-- [ ] **P9-9** Add trend analysis
-  - Track: success rate, avg duration, cost per task, retry frequency
-  - Anomaly detection for sudden failures
+- [x] **P9-9** Add trend analysis
+  - `TrendAnalysis` dataclass with statistics
+  - `TrendPoint` for individual data points
+  - `TrendReport` with multiple metrics
+  - Linear regression for trend direction
+  - Z-score anomaly detection
+  - Alert generation for declining metrics
+  - **Files:** `src/adw/reports/trends.py`
 
-- [ ] **P9-10** Add TUI visualization with sparklines
+- [x] **P9-10** Add TUI visualization with sparklines
+  - `_generate_sparkline()` function (ASCII chars ▁▂▃▄▅▆▇█)
+  - `get_sparkline_summary()` for compact display
+  - `adw report sparklines` CLI command
+  - `adw report trends` for full trend report
+  - **Files:** `src/adw/reports/trends.py`, `src/adw/cli.py`
 
-- [ ] **P9-11** Add notification system
-  - Configurable channels (Slack/Discord)
-  - Events: task_start, task_complete, task_failed, daily_summary
+- [x] **P9-11** Add notification system
+  - `NotificationChannel` dataclass (name, type, webhook, events)
+  - `NotificationConfig` with JSON persistence
+  - Slack/Discord webhook formatters
+  - Event types: task_start, task_complete, task_failed, daily_summary, weekly_digest, anomaly
+  - CLI commands: `adw alerts add/remove/list/test/enable`
+  - **Files:** `src/adw/reports/notifications.py`, `src/adw/cli.py`
+
+### Tests Added
+- `tests/test_reports.py` - 61 tests covering:
+  - DailySummary creation and formatting (6 tests)
+  - Daily helper functions (4 tests)
+  - PhaseMetrics dataclass (4 tests)
+  - TaskMetrics dataclass (6 tests)
+  - MetricsDB CRUD operations (7 tests)
+  - WeeklyDigest creation and formatting (5 tests)
+  - Weekly helper functions (4 tests)
+  - TrendPoint dataclass (2 tests)
+  - TrendAnalysis dataclass (2 tests)
+  - Trend helper functions (8 tests)
+  - TrendReport dataclass (2 tests)
+  - NotificationChannel (4 tests)
+  - NotificationConfig (3 tests)
+  - Notification formatters (2 tests)
+  - Notification functions (4 tests)
+  - Integration tests (5 tests)
 
 ---
 
