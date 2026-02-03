@@ -130,7 +130,7 @@ class NotionConfig:
             return None
 
         try:
-            import tomli  # type: ignore[import-not-found]
+            import tomli
 
             with open(path, "rb") as f:
                 config = tomli.load(f)

@@ -1484,6 +1484,245 @@ def notion_process(dry_run: bool) -> None:
     console.print(f"[bold]Processed {count} task(s)[/bold]")
 
 
+# ============== Slack Integration Commands ==============
+
+
+@main.group()
+def slack() -> None:
+    """Slack integration commands.
+
+    Receive slash commands and send progress updates via Slack.
+    Enables bidirectional communication between Slack and ADW.
+
+    \\b
+    Configuration (environment variables):
+        SLACK_BOT_TOKEN       Slack bot token (xoxb-...) (required)
+        SLACK_SIGNING_SECRET  Signing secret for verification (required)
+        SLACK_CHANNEL_ID      Default channel for notifications (optional)
+
+    Or use ~/.adw/config.toml:
+        [slack]
+        bot_token = "xoxb-..."
+        signing_secret = "..."
+        channel_id = "C01234567"
+
+    \\b
+    Slash commands available in Slack:
+        /adw create <desc>   - Create a new task
+        /adw status [id]     - Show task status
+        /adw approve <id>    - Approve a pending task
+        /adw reject <id>     - Reject a pending task
+    """
+    pass
+
+
+@slack.command("start")
+@click.option(
+    "--port",
+    "-p",
+    type=int,
+    default=3000,
+    help="Port to listen on (default: 3000)",
+)
+@click.option(
+    "--host",
+    "-h",
+    default="0.0.0.0",
+    help="Host to bind to (default: 0.0.0.0)",
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="Enable auto-reload for development",
+)
+def slack_start(port: int, host: str, reload: bool) -> None:
+    """Start the Slack webhook server.
+
+    Starts a FastAPI server to receive Slack slash commands and
+    interactive component requests.
+
+    \\b
+    Slack App Configuration:
+    1. Create a Slack app at https://api.slack.com/apps
+    2. Add these scopes under OAuth & Permissions:
+       - chat:write
+       - chat:write.public
+       - commands
+       - reactions:write
+       - users:read
+    3. Install the app to your workspace
+    4. Create a slash command /adw pointing to:
+       https://your-domain.com/slack/commands
+    5. Enable Interactivity and point to:
+       https://your-domain.com/slack/interactions
+
+    \\b
+    Examples:
+        adw slack start                 # Start on default port 3000
+        adw slack start -p 8080         # Start on port 8080
+        adw slack start --reload        # Development mode with auto-reload
+    """
+    from .integrations.slack import SlackConfig, start_slack_server
+
+    config = SlackConfig.load()
+
+    if not config:
+        console.print("[red]Slack not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export SLACK_BOT_TOKEN=xoxb-...")
+        console.print("  export SLACK_SIGNING_SECRET=...")
+        console.print()
+        console.print("[dim]Or add to ~/.adw/config.toml:[/dim]")
+        console.print("  [slack]")
+        console.print('  bot_token = "xoxb-..."')
+        console.print('  signing_secret = "..."')
+        raise SystemExit(1)
+
+    console.print("[bold cyan]Starting Slack webhook server[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Listening on {host}:{port}[/dim]")
+    console.print("[dim]Endpoints:[/dim]")
+    console.print("  POST /slack/commands     - Slash commands")
+    console.print("  POST /slack/interactions - Button clicks")
+    console.print("  POST /slack/events       - Events API")
+    console.print("  GET  /health             - Health check")
+    console.print()
+    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
+    console.print()
+
+    try:
+        start_slack_server(config, host=host, port=port, reload=reload)
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Server stopped by user[/yellow]")
+
+
+@slack.command("test")
+def slack_test() -> None:
+    """Test Slack connection and configuration.
+
+    Verifies that the bot token is valid and the bot is connected.
+
+    \\b
+    Examples:
+        adw slack test
+    """
+    from .integrations.slack import SlackConfig, test_slack_connection
+
+    config = SlackConfig.load()
+
+    if not config:
+        console.print("[red]Slack not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export SLACK_BOT_TOKEN=xoxb-...")
+        console.print("  export SLACK_SIGNING_SECRET=...")
+        raise SystemExit(1)
+
+    console.print("[bold cyan]Testing Slack connection...[/bold cyan]")
+    console.print()
+
+    success = test_slack_connection(config)
+
+    if not success:
+        console.print("[red]✗ Connection failed[/red]")
+        console.print("[dim]Check your bot token[/dim]")
+        raise SystemExit(1)
+
+
+@slack.command("send")
+@click.argument("channel")
+@click.argument("message")
+def slack_send(channel: str, message: str) -> None:
+    """Send a test message to a Slack channel.
+
+    \\b
+    Examples:
+        adw slack send C01234567 "Hello from ADW!"
+        adw slack send "#general" "Test message"
+    """
+    from .integrations.slack import SlackClient, SlackConfig
+
+    config = SlackConfig.load()
+
+    if not config:
+        console.print("[red]Slack not configured[/red]")
+        raise SystemExit(1)
+
+    client = SlackClient(config.bot_token)
+    result = client.post_message(channel=channel, text=message)
+
+    if result:
+        console.print(f"[green]✓ Message sent to {channel}[/green]")
+    else:
+        console.print("[red]✗ Failed to send message[/red]")
+        raise SystemExit(1)
+
+
+@slack.command("notify")
+@click.argument("adw_id")
+@click.option(
+    "--event",
+    "-e",
+    type=click.Choice(["started", "completed", "failed", "approval"]),
+    default="completed",
+    help="Event type to notify",
+)
+@click.option(
+    "--error",
+    default=None,
+    help="Error message (for failed events)",
+)
+@click.option(
+    "--pr-url",
+    default=None,
+    help="PR URL (for completed events)",
+)
+def slack_notify(adw_id: str, event: str, error: str | None, pr_url: str | None) -> None:
+    """Send a notification for a task to its Slack thread.
+
+    Only works for tasks that were created via Slack.
+
+    \\b
+    Examples:
+        adw slack notify abc123de --event completed
+        adw slack notify abc123de --event failed --error "Tests failed"
+        adw slack notify abc123de --event completed --pr-url https://...
+    """
+    from .integrations.slack import (
+        SlackConfig,
+        notify_task_completed,
+        notify_task_failed,
+        request_approval,
+        send_thread_update,
+    )
+
+    config = SlackConfig.load()
+
+    if not config:
+        console.print("[red]Slack not configured[/red]")
+        raise SystemExit(1)
+
+    if event == "started":
+        success = send_thread_update(config, adw_id, "Task processing started", "rocket")
+    elif event == "completed":
+        success = notify_task_completed(config, adw_id, pr_url=pr_url)
+    elif event == "failed":
+        success = notify_task_failed(config, adw_id, error=error)
+    elif event == "approval":
+        success = request_approval(config, adw_id)
+    else:
+        console.print(f"[red]Unknown event: {event}[/red]")
+        raise SystemExit(1)
+
+    if success:
+        console.print(f"[green]✓ Notification sent for {adw_id}[/green]")
+    else:
+        console.print(f"[yellow]No Slack thread found for {adw_id}[/yellow]")
+        console.print("[dim]Task may not have been created via Slack[/dim]")
+
+
 # ============== PR Linking Commands (Multi-Repo) ==============
 
 
