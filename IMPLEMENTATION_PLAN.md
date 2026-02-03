@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
-**Version:** 0.5.27
-**Status:** Phase 11 COMPLETE - All simplification tasks finished. P11-7 added comprehensive documentation. Total: 1528 tests passing. Code quality: all ruff lint checks pass.
+**Version:** 0.5.29
+**Status:** Phase 11 COMPLETE - All simplification tasks finished. Added Task.workflow, Task.priority, Task.skip_review properties with 21 new tests. Total: 1528 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
