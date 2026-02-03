@@ -5981,6 +5981,388 @@ def prompt_list(path: Path | None) -> None:
 
 
 # =============================================================================
+# Config Commands
+# =============================================================================
+
+
+@main.group()
+def config() -> None:
+    """View and manage ADW configuration.
+
+    ADW uses a single configuration file at ~/.adw/config.toml.
+    Settings are organized into sections for core, daemon, UI, workflow,
+    workspace, and integrations.
+
+    Configuration priority:
+    1. Environment variables (highest)
+    2. Config file (~/.adw/config.toml)
+    3. Defaults (lowest)
+    """
+    pass
+
+
+@config.command("show")
+@click.option("--secrets", "-s", is_flag=True, help="Show sensitive values (API keys)")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--section", type=str, help="Show only a specific section")
+def config_show(secrets: bool, as_json: bool, section: str | None) -> None:
+    """Show current configuration.
+
+    Displays all ADW settings from config file and environment overrides.
+
+    \\b
+    Examples:
+        adw config show                 # Show all config
+        adw config show --secrets       # Include API keys
+        adw config show --json          # JSON output
+        adw config show --section core  # Show only [core] section
+    """
+    import json as json_lib
+
+    from .config import format_config_for_display, get_config
+
+    config = get_config()
+
+    if as_json:
+        data = config.to_dict(include_secrets=secrets)
+        if section:
+            if section in data:
+                data = {section: data[section]}
+            else:
+                console.print(f"[red]Unknown section: {section}[/red]")
+                console.print(
+                    "[dim]Available: core, daemon, ui, workflow, workspace, "
+                    "slack, linear, notion, github, webhook, plugins[/dim]"
+                )
+                return
+        click.echo(json_lib.dumps(data, indent=2, default=str))
+        return
+
+    if section:
+        # Show just one section
+        if not hasattr(config, section):
+            console.print(f"[red]Unknown section: {section}[/red]")
+            console.print(
+                "[dim]Available: core, daemon, ui, workflow, workspace, "
+                "slack, linear, notion, github, webhook, plugins[/dim]"
+            )
+            return
+
+        section_obj = getattr(config, section)
+        console.print(f"[bold][{section}][/bold]")
+        if hasattr(section_obj, "to_dict"):
+            for k, v in section_obj.to_dict().items():
+                console.print(f"  {k} = {v}")
+        else:
+            console.print(f"  {section_obj}")
+        return
+
+    # Full display
+    output = format_config_for_display(config, show_secrets=secrets)
+    console.print(output)
+
+
+@config.command("get")
+@click.argument("key")
+def config_get(key: str) -> None:
+    """Get a specific configuration value.
+
+    Use dotted notation to access nested values.
+
+    \\b
+    Examples:
+        adw config get core.default_model
+        adw config get daemon.max_concurrent
+        adw config get slack.channel_id
+    """
+    from .config import get_config
+
+    config = get_config()
+    value = config.get(key)
+
+    if value is None:
+        console.print(f"[yellow]Key not found: {key}[/yellow]")
+        console.print("[dim]Use 'adw config keys' to list available keys[/dim]")
+        return
+
+    console.print(f"{key} = {value}")
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value")
+def config_set(key: str, value: str) -> None:
+    """Set a configuration value.
+
+    Use dotted notation for nested values. Changes are saved to config file.
+
+    \\b
+    Examples:
+        adw config set core.default_model opus
+        adw config set daemon.max_concurrent 5
+        adw config set ui.show_logo false
+    """
+    from .config import get_config, save_config
+
+    config = get_config()
+
+    # Parse value
+    parsed_value: str | int | float | bool
+    if value.lower() in ("true", "yes", "1"):
+        parsed_value = True
+    elif value.lower() in ("false", "no", "0"):
+        parsed_value = False
+    elif value.isdigit():
+        parsed_value = int(value)
+    elif value.replace(".", "", 1).isdigit():
+        parsed_value = float(value)
+    else:
+        parsed_value = value
+
+    if config.set(key, parsed_value):
+        if save_config(config):
+            console.print(f"[green]✓ Set {key} = {parsed_value}[/green]")
+        else:
+            console.print("[red]Failed to save config[/red]")
+    else:
+        console.print(f"[red]Failed to set {key}[/red]")
+        console.print("[dim]Use 'adw config keys' to list available keys[/dim]")
+
+
+@config.command("keys")
+@click.option("--section", type=str, help="Filter by section")
+def config_keys(section: str | None) -> None:
+    """List all available configuration keys.
+
+    \\b
+    Examples:
+        adw config keys                 # List all keys
+        adw config keys --section core  # List keys in [core] section
+    """
+    from .config import list_config_keys
+
+    keys = list_config_keys()
+
+    if section:
+        keys = [k for k in keys if k.startswith(f"{section}.")]
+        if not keys:
+            console.print(f"[yellow]No keys found in section: {section}[/yellow]")
+            return
+
+    console.print("[bold]Available Configuration Keys[/bold]\n")
+
+    current_section = None
+    for key in keys:
+        parts = key.split(".")
+        if parts[0] != current_section:
+            current_section = parts[0]
+            console.print(f"[cyan][{current_section}][/cyan]")
+        console.print(f"  {key}")
+
+
+@config.command("edit")
+def config_edit() -> None:
+    """Open configuration file in editor.
+
+    Uses $EDITOR environment variable, falls back to vi.
+
+    \\b
+    Examples:
+        adw config edit                 # Open in default editor
+        EDITOR=code adw config edit     # Open in VS Code
+    """
+    import os
+    import subprocess
+
+    from .config import get_config_path
+
+    config_path = get_config_path()
+
+    # Create default config if doesn't exist
+    if not config_path.exists():
+        from .config import ADWConfig, save_config
+
+        config = ADWConfig()
+        save_config(config, config_path)
+        console.print(f"[dim]Created default config at {config_path}[/dim]")
+
+    editor = os.environ.get("EDITOR", "vi")
+
+    try:
+        subprocess.run([editor, str(config_path)], check=True)
+        console.print(f"[green]✓ Config edited: {config_path}[/green]")
+    except subprocess.CalledProcessError:
+        console.print("[red]Editor exited with error[/red]")
+    except FileNotFoundError:
+        console.print(f"[red]Editor not found: {editor}[/red]")
+        console.print(f"[dim]Set EDITOR environment variable or install {editor}[/dim]")
+
+
+@config.command("path")
+def config_path_cmd() -> None:
+    """Show configuration file path.
+
+    \\b
+    Examples:
+        adw config path
+        cat $(adw config path)
+    """
+    from .config import get_config_path
+
+    path = get_config_path()
+    click.echo(str(path))
+
+
+@config.command("reset")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.option("--section", type=str, help="Reset only a specific section")
+def config_reset(yes: bool, section: str | None) -> None:
+    """Reset configuration to defaults.
+
+    Backs up existing config before resetting.
+
+    \\b
+    Examples:
+        adw config reset                # Reset all (with backup)
+        adw config reset --section ui   # Reset only [ui] section
+        adw config reset --yes          # Skip confirmation
+    """
+    from datetime import datetime as dt
+
+    from .config import (
+        ADWConfig,
+        CoreConfig,
+        DaemonConfig,
+        UIConfig,
+        WorkflowConfig,
+        WorkspaceSettings,
+        get_config,
+        get_config_path,
+        save_config,
+    )
+
+    config_path = get_config_path()
+
+    if section:
+        # Reset specific section
+        config = get_config()
+
+        section_defaults = {
+            "core": CoreConfig,
+            "daemon": DaemonConfig,
+            "ui": UIConfig,
+            "workflow": WorkflowConfig,
+            "workspace": WorkspaceSettings,
+        }
+
+        if section not in section_defaults:
+            console.print(f"[red]Cannot reset section: {section}[/red]")
+            console.print(f"[dim]Resettable sections: {', '.join(section_defaults.keys())}[/dim]")
+            return
+
+        if not yes:
+            if not click.confirm(f"Reset [{section}] to defaults?"):
+                console.print("[dim]Cancelled[/dim]")
+                return
+
+        setattr(config, section, section_defaults[section]())
+        save_config(config)
+        console.print(f"[green]✓ Reset [{section}] to defaults[/green]")
+        return
+
+    # Reset all
+    if not yes:
+        if not click.confirm("Reset ALL configuration to defaults?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    # Backup existing config
+    if config_path.exists():
+        backup_path = config_path.with_suffix(f".{dt.now().strftime('%Y%m%d_%H%M%S')}.bak")
+        config_path.rename(backup_path)
+        console.print(f"[dim]Backed up to: {backup_path}[/dim]")
+
+    # Create fresh config
+    config = ADWConfig()
+    save_config(config, config_path)
+    console.print("[green]✓ Configuration reset to defaults[/green]")
+
+
+@config.command("migrate")
+@click.option("--dry-run", is_flag=True, help="Show what would be migrated without making changes")
+def config_migrate(dry_run: bool) -> None:
+    """Migrate settings from workspace.toml to config.toml.
+
+    Consolidates scattered settings into the unified config file.
+    This is safe to run multiple times.
+
+    \\b
+    Examples:
+        adw config migrate              # Migrate settings
+        adw config migrate --dry-run    # Preview changes
+    """
+    from .config import get_config, get_config_path, save_config
+
+    workspace_path = Path.home() / ".adw" / "workspace.toml"
+    config_path = get_config_path()
+
+    if not workspace_path.exists():
+        console.print("[dim]No workspace.toml found, nothing to migrate[/dim]")
+        return
+
+    # Load workspace config
+    try:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+
+        with open(workspace_path, "rb") as f:
+            workspace_data = tomllib.load(f)
+    except Exception as e:
+        console.print(f"[red]Failed to read workspace.toml: {e}[/red]")
+        return
+
+    # Get current config
+    config = get_config()
+
+    changes = []
+
+    # Migrate active_workspace
+    if "config" in workspace_data:
+        ws_config = workspace_data["config"]
+        if "active_workspace" in ws_config:
+            old_val = config.workspace.active_workspace
+            new_val = ws_config["active_workspace"]
+            if old_val != new_val:
+                changes.append(("workspace.active_workspace", old_val, new_val))
+                if not dry_run:
+                    config.workspace.active_workspace = new_val
+
+    if not changes:
+        console.print("[dim]No changes to migrate[/dim]")
+        return
+
+    console.print("[bold]Migration Changes[/bold]\n")
+    for key, old, new in changes:
+        console.print(f"  {key}: {old} → {new}")
+
+    if dry_run:
+        console.print("\n[dim]Dry run - no changes made[/dim]")
+        return
+
+    if save_config(config):
+        console.print(f"\n[green]✓ Migrated {len(changes)} setting(s)[/green]")
+        console.print(f"[dim]Saved to: {config_path}[/dim]")
+
+        # Note about workspace.toml
+        console.print("\n[yellow]Note: workspace.toml still contains repository definitions.[/yellow]")
+        console.print("[dim]These are kept separate for workspace-specific settings.[/dim]")
+    else:
+        console.print("\n[red]Failed to save config[/red]")
+
+
+# =============================================================================
 # QMD Commands (via plugin, kept for backward compatibility)
 # =============================================================================
 
