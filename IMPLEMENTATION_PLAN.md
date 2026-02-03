@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
-**Version:** 0.5.24
-**Status:** Phase 11 IN PROGRESS - Config consolidation (P11-4) complete. Unified config system with CLI commands. Total: 1356 tests passing (56 new config tests). Code quality: all ruff lint checks pass.
+**Version:** 0.5.25
+**Status:** Phase 11 IN PROGRESS - P11-3 (TUI cleanup) and P11-4 (config consolidation) complete. Unified config system with CLI commands. Total: 1356 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -1373,7 +1373,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-11/simplification.md`
-**Status:** In Progress (14% - P11-4 complete)
+**Status:** In Progress (28% - P11-3 and P11-4 complete)
 
 ### Tasks
 
@@ -1386,10 +1386,13 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Inline QMD integration (remove plugin abstraction if unused)
   - Document extension mechanism
 
-- [ ] **P11-3** TUI dashboard cleanup
-  - Remove unused widgets
-  - Focus on: task list, logs, status
-  - Make ASCII logo optional
+- [x] **P11-3** TUI dashboard cleanup ✅
+  - Removed 8 unused widget files: animated.py, splash.py, logo_header.py, status_bar.py, task_detail.py, task_list.py, phase_indicator.py, spec_list.py (~350 lines removed)
+  - Cleaned up widgets/__init__.py exports (kept: DiscussModal, EventStream, LogViewer, QuestionModal)
+  - Removed dead PhaseIndicator CSS from styles.py
+  - Made ASCII logo configurable via `ui.show_logo` in config.toml
+  - App now reads config at startup to show/hide logo
+  - **Files:** `src/adw/tui/widgets/__init__.py`, `src/adw/tui/styles.py`, `src/adw/tui/app.py`
 
 - [x] **P11-4** Config consolidation ✅
   - Created unified config system at `src/adw/config.py` (900+ lines)

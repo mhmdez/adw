@@ -186,14 +186,6 @@ DiscussModal #discuss-container {
     padding: 2;
 }
 
-/* Phase Indicator */
-PhaseIndicator {
-    height: 1;
-    background: #111;
-    border-bottom: solid #222;
-    padding: 0 2;
-}
-
 /* Accent Colors */
 .accent-primary {
     color: #00D4FF;

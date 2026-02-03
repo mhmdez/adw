@@ -31,6 +31,7 @@ from .. import __version__
 from ..agent.manager import AgentManager
 from ..agent.models import TaskStatus
 from ..agent.utils import generate_adw_id
+from ..config import get_config
 from ..protocol.messages import AgentQuestion, write_answer
 from ..specs import Spec, SpecLoader, SpecStatus
 from ..workflow import TaskPhase, WorkflowManager
@@ -485,16 +486,18 @@ class ADWApp(App):
 
         # Beautiful welcome with ASCII art
         detail = self.query_one(DetailPanel)
+        config = get_config()
 
-        # Show the big ASCII logo with gradient colors
-        for line in LOGO.strip().split('\n'):
-            detail.add_message(f"[bold {COLORS['primary']}]{line}[/]")
+        # Show the big ASCII logo with gradient colors (configurable via ui.show_logo)
+        if config.ui.show_logo:
+            for line in LOGO.strip().split('\n'):
+                detail.add_message(f"[bold {COLORS['primary']}]{line}[/]")
+            detail.add_message("")
+            detail.add_message(f"[bold {COLORS['accent']}]✨ {TAGLINE}[/]  [dim]—  Ship features while you sleep[/]")
+            detail.add_message("")
+            detail.add_message(f"[{COLORS['muted']}]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+            detail.add_message("")
 
-        detail.add_message("")
-        detail.add_message(f"[bold {COLORS['accent']}]✨ {TAGLINE}[/]  [dim]—  Ship features while you sleep[/]")
-        detail.add_message("")
-        detail.add_message(f"[{COLORS['muted']}]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
-        detail.add_message("")
         detail.add_message(f"[bold {COLORS['success']}]⚡ Quick Start[/]")
         detail.add_message(f"  [{COLORS['primary']}]/new[/] [dim]<task>[/]     [dim]→[/]  Create a new task")
         detail.add_message(f"  [{COLORS['primary']}]/discuss[/] [dim]<idea>[/] [dim]→[/]  Interactive planning")
