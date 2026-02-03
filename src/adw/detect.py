@@ -10,11 +10,21 @@ from typing import Literal
 
 ProjectCategory = Literal["frontend", "backend", "fullstack"]
 ProjectStack = Literal[
-    "react", "vue", "svelte", "nextjs", "nuxt",
-    "python", "fastapi", "django", "flask",
-    "node", "express", "nestjs",
-    "go", "rust",
-    "unknown"
+    "react",
+    "vue",
+    "svelte",
+    "nextjs",
+    "nuxt",
+    "python",
+    "fastapi",
+    "django",
+    "flask",
+    "node",
+    "express",
+    "nestjs",
+    "go",
+    "rust",
+    "unknown",
 ]
 
 

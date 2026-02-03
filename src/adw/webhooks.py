@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 class WebhookType(str, Enum):
     """Webhook format type."""
+
     GENERIC = "generic"
     SLACK = "slack"
     DISCORD = "discord"
@@ -25,6 +26,7 @@ class WebhookType(str, Enum):
 @dataclass
 class WebhookConfig:
     """Configuration for webhooks."""
+
     url: str
     type: WebhookType = WebhookType.GENERIC
     enabled: bool = True
@@ -65,44 +67,33 @@ def format_slack_payload(event: str, data: dict) -> dict:
     adw_id = data.get("adw_id", "unknown")[:8]
 
     blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"{emoji} *{title}*\n\n{desc}"
-            }
-        },
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"{emoji} *{title}*\n\n{desc}"}},
         {
             "type": "context",
             "elements": [
                 {"type": "mrkdwn", "text": f"ADW ID: `{adw_id}`"},
-                {"type": "mrkdwn", "text": f"Time: {datetime.now().strftime('%H:%M:%S')}"}
-            ]
-        }
+                {"type": "mrkdwn", "text": f"Time: {datetime.now().strftime('%H:%M:%S')}"},
+            ],
+        },
     ]
 
     if event == "task_failed":
         error = data.get("error") or f"Exit code {data.get('return_code', '?')}"
-        blocks.insert(1, {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Error:* {error[:200]}"}
-        })
+        blocks.insert(1, {"type": "section", "text": {"type": "mrkdwn", "text": f"*Error:* {error[:200]}"}})
 
-    return {
-        "attachments": [{"color": color, "blocks": blocks}]
-    }
+    return {"attachments": [{"color": color, "blocks": blocks}]}
 
 
 def format_discord_payload(event: str, data: dict) -> dict:
     """Format payload for Discord webhook."""
     if event == "task_completed":
-        color = 0x36a64f  # Green
+        color = 0x36A64F  # Green
         title = "✅ ADW Task Completed"
     elif event == "task_failed":
-        color = 0xff0000  # Red
+        color = 0xFF0000  # Red
         title = "❌ ADW Task Failed"
     elif event == "task_started":
-        color = 0x0066cc  # Blue
+        color = 0x0066CC  # Blue
         title = "🚀 ADW Task Started"
     else:
         color = 0x808080  # Gray
@@ -113,7 +104,7 @@ def format_discord_payload(event: str, data: dict) -> dict:
 
     fields = [
         {"name": "ADW ID", "value": f"`{adw_id}`", "inline": True},
-        {"name": "Time", "value": datetime.now().strftime("%H:%M:%S"), "inline": True}
+        {"name": "Time", "value": datetime.now().strftime("%H:%M:%S"), "inline": True},
     ]
 
     if event == "task_failed":
@@ -121,13 +112,15 @@ def format_discord_payload(event: str, data: dict) -> dict:
         fields.append({"name": "Error", "value": error[:200], "inline": False})
 
     return {
-        "embeds": [{
-            "title": title,
-            "description": desc,
-            "color": color,
-            "fields": fields,
-            "footer": {"text": "ADW - AI Developer Workflow"}
-        }]
+        "embeds": [
+            {
+                "title": title,
+                "description": desc,
+                "color": color,
+                "fields": fields,
+                "footer": {"text": "ADW - AI Developer Workflow"},
+            }
+        ]
     }
 
 
@@ -142,7 +135,7 @@ def format_generic_payload(event: str, data: dict) -> dict:
             "error": data.get("error"),
             "return_code": data.get("return_code"),
             "stderr": data.get("stderr", "")[:500] if data.get("stderr") else None,
-        }
+        },
     }
 
 
@@ -179,10 +172,7 @@ def send_webhook(
         req = Request(
             config.url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "ADW-CLI/0.3.1"
-            },
+            headers={"Content-Type": "application/json", "User-Agent": "ADW-CLI/0.3.1"},
             method="POST",
         )
 

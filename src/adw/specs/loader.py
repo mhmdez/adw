@@ -10,9 +10,9 @@ from .models import Spec, SpecStatus
 class SpecLoader:
     """Load and parse spec files from a directory."""
 
-    SPEC_PATTERN = re.compile(r'^(P\d+-\d+)\.md$')
-    STATUS_PATTERN = re.compile(r'^Status:\s*(\w+)', re.MULTILINE | re.IGNORECASE)
-    TITLE_PATTERN = re.compile(r'^#\s+(?:Task\s+)?(?:P\d+-\d+:?\s*)?(.+)$', re.MULTILINE)
+    SPEC_PATTERN = re.compile(r"^(P\d+-\d+)\.md$")
+    STATUS_PATTERN = re.compile(r"^Status:\s*(\w+)", re.MULTILINE | re.IGNORECASE)
+    TITLE_PATTERN = re.compile(r"^#\s+(?:Task\s+)?(?:P\d+-\d+:?\s*)?(.+)$", re.MULTILINE)
 
     def __init__(self, specs_dir: Path | None = None):
         self.specs_dir = specs_dir or Path("specs")
@@ -69,7 +69,7 @@ class SpecLoader:
 
     def _extract_description(self, content: str) -> str | None:
         """Extract first paragraph after objective heading."""
-        obj_match = re.search(r'##\s*Objective\s*\n+(.+?)(?=\n\n|\n##|$)', content, re.DOTALL)
+        obj_match = re.search(r"##\s*Objective\s*\n+(.+?)(?=\n\n|\n##|$)", content, re.DOTALL)
         if obj_match:
             return obj_match.group(1).strip()[:200]
         return None
@@ -92,10 +92,10 @@ class SpecLoader:
         if self.STATUS_PATTERN.search(content):
             content = self.STATUS_PATTERN.sub(f"Status: {status.value}", content)
         else:
-            content = re.sub(r'^(#.+\n)', f'\\1\nStatus: {status.value}\n', content)
+            content = re.sub(r"^(#.+\n)", f"\\1\nStatus: {status.value}\n", content)
 
         if status == SpecStatus.REJECTED and reason:
-            content = re.sub(r'(Status: rejected)', f'\\1\nRejection Reason: {reason}', content)
+            content = re.sub(r"(Status: rejected)", f"\\1\nRejection Reason: {reason}", content)
 
         file.write_text(content)
         return True

@@ -169,8 +169,7 @@ def _format_slack_message(
 
     if fields:
         attachment["fields"] = [
-            {"title": f["title"], "value": f["value"], "short": f.get("short", True)}
-            for f in fields
+            {"title": f["title"], "value": f["value"], "short": f.get("short", True)} for f in fields
         ]
 
     return {"attachments": [attachment]}
@@ -201,10 +200,7 @@ def _format_discord_message(
     }
 
     if fields:
-        embed["fields"] = [
-            {"name": f["title"], "value": f["value"], "inline": f.get("short", True)}
-            for f in fields
-        ]
+        embed["fields"] = [{"name": f["title"], "value": f["value"], "inline": f.get("short", True)} for f in fields]
 
     return {"embeds": [embed]}
 

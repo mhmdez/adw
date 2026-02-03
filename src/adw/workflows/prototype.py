@@ -204,7 +204,7 @@ def build_verify_prompt(
 
 ## Expected Files
 
-{', '.join(config.file_patterns)}
+{", ".join(config.file_patterns)}
 
 Report your findings. If everything looks good, confirm success.
 If there are issues, list them clearly.

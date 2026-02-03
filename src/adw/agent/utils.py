@@ -20,4 +20,4 @@ def truncate_string(s: str, max_length: int = 100) -> str:
     """Truncate string with ellipsis."""
     if len(s) <= max_length:
         return s
-    return s[:max_length - 3] + "..."
+    return s[: max_length - 3] + "..."

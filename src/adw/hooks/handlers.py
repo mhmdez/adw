@@ -17,6 +17,7 @@ from typing import Any
 
 class HookType(str, Enum):
     """Types of Claude Code hooks."""
+
     PRE_TOOL_USE = "PreToolUse"
     POST_TOOL_USE = "PostToolUse"
     USER_PROMPT_SUBMIT = "UserPromptSubmit"
@@ -27,6 +28,7 @@ class HookType(str, Enum):
 @dataclass
 class HookEvent:
     """Represents an incoming hook event."""
+
     hook_type: HookType
     session_id: str | None = None
     tool_name: str | None = None
@@ -63,6 +65,7 @@ class HookEvent:
 @dataclass
 class HookResult:
     """Result from processing a hook."""
+
     success: bool = True
     message: str | None = None
     block: bool = False  # If True, blocks the tool execution

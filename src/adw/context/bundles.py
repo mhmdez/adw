@@ -329,8 +329,7 @@ class BundleDiff:
     def summary(self) -> str:
         """Human-readable summary of the diff."""
         return (
-            f"Diff {self.bundle1_id} → {self.bundle2_id}: "
-            f"+{len(self.added)} -{len(self.removed)} ={len(self.common)}"
+            f"Diff {self.bundle1_id} → {self.bundle2_id}: +{len(self.added)} -{len(self.removed)} ={len(self.common)}"
         )
 
 

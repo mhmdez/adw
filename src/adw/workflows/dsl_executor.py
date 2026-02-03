@@ -372,9 +372,7 @@ def execute_phase_with_loop(
                                 attempt_number=iterations,
                                 phase=f"{phase.name}_tests",
                                 error_message=test_result.retry_context or "Tests failed",
-                                strategy=select_retry_strategy(
-                                    iterations, max_iterations
-                                ).value,
+                                strategy=select_retry_strategy(iterations, max_iterations).value,
                                 duration_seconds=result.duration_seconds,
                             )
                         )
@@ -479,6 +477,7 @@ def execute_parallel_phases(
 
     def execute_single(phase: PhaseDefinition) -> tuple[DSLPhaseResult, list[AttemptRecord]]:
         """Execute a single phase in a thread."""
+
         # Create thread-safe progress callback
         def thread_progress(msg: str) -> None:
             if on_progress:
@@ -495,10 +494,7 @@ def execute_parallel_phases(
     # Execute phases in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=min(max_workers, len(phases))) as executor:
         # Submit all phases
-        future_to_phase = {
-            executor.submit(execute_single, phase): phase
-            for phase in phases
-        }
+        future_to_phase = {executor.submit(execute_single, phase): phase for phase in phases}
 
         # Collect results as they complete
         for future in as_completed(future_to_phase):

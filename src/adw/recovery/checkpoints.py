@@ -428,9 +428,7 @@ class CheckpointManager:
             f"Last Step: {context['step']}\n"
             f"Timestamp: {context['timestamp']}\n"
             f"Git Commit: {context['git_commit'] or 'N/A'}\n\n"
-            f"Files Modified:\n"
-            + "\n".join(f"  - {f}" for f in context['files_modified'])
-            + "\n\n"
+            f"Files Modified:\n" + "\n".join(f"  - {f}" for f in context["files_modified"]) + "\n\n"
             "Please continue from where the task left off.\n"
             "Review the previous work and proceed with the next steps."
         )

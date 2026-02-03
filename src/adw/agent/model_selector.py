@@ -19,27 +19,21 @@ SLASH_COMMAND_MODEL_MAP: dict[str, dict[str, str]] = {
     "/feature": {"base": "sonnet", "heavy": "opus"},
     "/bug": {"base": "sonnet", "heavy": "opus"},
     "/chore": {"base": "sonnet", "heavy": "sonnet"},
-
     # Implementation - can use Opus for complex code
     "/implement": {"base": "sonnet", "heavy": "opus"},
     "/build": {"base": "sonnet", "heavy": "opus"},
-
     # Testing - Sonnet is usually sufficient
     "/test": {"base": "sonnet", "heavy": "sonnet"},
     "/resolve_failed_test": {"base": "sonnet", "heavy": "opus"},
-
     # Review - benefits from deeper reasoning
     "/review": {"base": "sonnet", "heavy": "opus"},
     "/verify": {"base": "sonnet", "heavy": "opus"},
-
     # Documentation - Opus for comprehensive docs
     "/document": {"base": "sonnet", "heavy": "opus"},
-
     # Simple operations - Haiku is sufficient
     "/status": {"base": "haiku", "heavy": "haiku"},
     "/update_task": {"base": "haiku", "heavy": "sonnet"},
     "/mark_in_progress": {"base": "haiku", "heavy": "haiku"},
-
     # Prototypes - complex scaffolding
     "/plan_vite_vue": {"base": "sonnet", "heavy": "opus"},
     "/plan_uv_script": {"base": "sonnet", "heavy": "opus"},
@@ -80,7 +74,7 @@ def get_model_for_command(
     # Look up in command map
     command_config = SLASH_COMMAND_MODEL_MAP.get(
         slash_command,
-        {"base": "sonnet", "heavy": "sonnet"}  # Default
+        {"base": "sonnet", "heavy": "sonnet"},  # Default
     )
 
     return command_config.get(model_set, "sonnet")
@@ -108,7 +102,7 @@ def get_model_for_phase(
     # Look up in phase map
     phase_config = PHASE_MODEL_MAP.get(
         phase,
-        {"base": "sonnet", "heavy": "sonnet"}  # Default
+        {"base": "sonnet", "heavy": "sonnet"},  # Default
     )
 
     return phase_config.get(model_set, "sonnet")
@@ -154,11 +148,21 @@ def should_use_heavy_model(task_description: str, tags: list[str]) -> bool:
 
     # Keywords suggesting complexity
     complex_keywords = [
-        "architecture", "redesign", "refactor", "migrate",
-        "security", "authentication", "authorization",
-        "performance", "optimization", "scale",
-        "database", "schema", "migration",
-        "api design", "system design",
+        "architecture",
+        "redesign",
+        "refactor",
+        "migrate",
+        "security",
+        "authentication",
+        "authorization",
+        "performance",
+        "optimization",
+        "scale",
+        "database",
+        "schema",
+        "migration",
+        "api design",
+        "system design",
     ]
 
     description_lower = task_description.lower()

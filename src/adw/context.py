@@ -54,10 +54,7 @@ def update_progress_log(
 
         if f"### {date_str}" in after_marker:
             # Add to existing date section
-            after_marker = after_marker.replace(
-                f"### {date_str}\n",
-                f"### {date_str}\n{entry}\n"
-            )
+            after_marker = after_marker.replace(f"### {date_str}\n", f"### {date_str}\n{entry}\n")
         else:
             # Create new date section
             after_marker = f"\n\n### {date_str}\n{entry}\n" + after_marker
@@ -160,6 +157,7 @@ def detect_new_dependencies(project_path: Path) -> list[str]:
     if package_json.exists():
         try:
             import json
+
             data = json.loads(package_json.read_text())
             deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
 

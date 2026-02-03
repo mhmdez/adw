@@ -19,6 +19,7 @@ console = Console()
 @dataclass
 class ProjectAnalysis:
     """Result of project analysis."""
+
     name: str
     description: str
     stack: list[str]
@@ -29,7 +30,7 @@ class ProjectAnalysis:
     api_endpoints: list[dict[str, str]] | None = None
 
 
-ANALYSIS_PROMPT = '''Analyze this project and output a JSON object with the following structure:
+ANALYSIS_PROMPT = """Analyze this project and output a JSON object with the following structure:
 
 {
   "name": "project name",
@@ -61,7 +62,7 @@ Look at:
 4. Source files for patterns and conventions
 5. API routes if it's a web service
 
-Output ONLY valid JSON, no markdown, no explanation.'''
+Output ONLY valid JSON, no markdown, no explanation."""
 
 
 def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
@@ -76,8 +77,10 @@ def run_claude_analysis(project_path: Path, timeout: int = 120) -> dict | None:
     """
     cmd = [
         "claude",
-        "--print", ANALYSIS_PROMPT,
-        "--output-format", "text",
+        "--print",
+        ANALYSIS_PROMPT,
+        "--output-format",
+        "text",
         "--dangerously-skip-permissions",
     ]
 
@@ -144,7 +147,7 @@ This file provides guidance to Claude Code when working with this codebase.
 
 **{name}** — {description}
 
-**Tech Stack:** {', '.join(stack) if stack else 'Not detected'}
+**Tech Stack:** {", ".join(stack) if stack else "Not detected"}
 
 ## Project Structure
 

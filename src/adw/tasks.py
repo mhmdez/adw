@@ -64,9 +64,7 @@ def parse_tasks(content: str) -> list[Task]:
 
     # Pattern for task lines: - [ ] TASK-XXX: Title or - [x] TASK-XXX: Title
     status_values = r"pending|in_progress|done|blocked|failed"
-    task_pattern = re.compile(
-        rf"^-\s+\[([ xX\-!])\]\s+(?:([A-Z]+-\d+):\s+)?(.+?)(?:\s+\(({status_values})\))?$"
-    )
+    task_pattern = re.compile(rf"^-\s+\[([ xX\-!])\]\s+(?:([A-Z]+-\d+):\s+)?(.+?)(?:\s+\(({status_values})\))?$")
 
     # Pattern for metadata lines: - Status: value
     metadata_pattern = re.compile(r"^\s+-\s+(Status|Spec|Assignee|Depends):\s+(.+)$", re.IGNORECASE)
@@ -227,9 +225,7 @@ def update_task_status(
 
     status_values = r"pending|in_progress|done|blocked|failed"
     escaped_id = re.escape(task_id)
-    task_pattern = re.compile(
-        rf"^(-\s+\[)([ xX\-!])(\]\s+(?:{escaped_id}:\s+)?(.+?))(\s+\(({status_values})\))?$"
-    )
+    task_pattern = re.compile(rf"^(-\s+\[)([ xX\-!])(\]\s+(?:{escaped_id}:\s+)?(.+?))(\s+\(({status_values})\))?$")
 
     for i, line in enumerate(lines):
         match = task_pattern.match(line)

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 @dataclass
 class GitHubIssue:
     """Represents a GitHub issue."""
+
     number: int
     title: str
     body: str
@@ -28,8 +29,7 @@ def get_issue(issue_number: int) -> GitHubIssue | None:
     """
     try:
         result = subprocess.run(
-            ["gh", "issue", "view", str(issue_number), "--json",
-             "number,title,body,labels,state"],
+            ["gh", "issue", "view", str(issue_number), "--json", "number,title,body,labels,state"],
             capture_output=True,
             text=True,
         )
@@ -95,11 +95,17 @@ def create_pull_request(
     try:
         result = subprocess.run(
             [
-                "gh", "pr", "create",
-                "--title", title,
-                "--body", body,
-                "--head", branch,
-                "--base", base,
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                body,
+                "--head",
+                branch,
+                "--base",
+                base,
             ],
             capture_output=True,
             text=True,
@@ -126,10 +132,15 @@ def get_open_issues_with_label(label: str) -> list[GitHubIssue]:
     try:
         result = subprocess.run(
             [
-                "gh", "issue", "list",
-                "--label", label,
-                "--state", "open",
-                "--json", "number,title,body,labels,state",
+                "gh",
+                "issue",
+                "list",
+                "--label",
+                label,
+                "--state",
+                "open",
+                "--json",
+                "number,title,body,labels,state",
             ],
             capture_output=True,
             text=True,

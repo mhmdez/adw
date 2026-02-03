@@ -66,8 +66,10 @@ class ADWState(BaseModel):
         return path
 
     def add_error(self, phase: str, error: str) -> None:
-        self.errors.append({
-            "phase": phase,
-            "error": error,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self.errors.append(
+            {
+                "phase": phase,
+                "error": error,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )

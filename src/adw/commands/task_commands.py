@@ -177,7 +177,7 @@ def list_tasks(
         match = re.search(r"\*?\*?(TASK-\d+)\*?\*?:?\s*", desc)
         if match:
             task_id = match.group(1)
-            desc = desc[match.end():].strip()
+            desc = desc[match.end() :].strip()
 
         # Show ADW ID if running
         if task.adw_id:
@@ -282,12 +282,10 @@ def retry_task(
 
     # Find and reset the task
     # Pattern: [❌, adw_id] description // Failed: reason
-    pattern = re.compile(
-        r"\[❌,?\s*([a-f0-9]{8})?\]\s*(.+?)\s*//\s*Failed:.*$",
-        re.MULTILINE
-    )
+    pattern = re.compile(r"\[❌,?\s*([a-f0-9]{8})?\]\s*(.+?)\s*//\s*Failed:.*$", re.MULTILINE)
 
     found = False
+
     def replacer(match):
         nonlocal found
         adw_id = match.group(1) or ""

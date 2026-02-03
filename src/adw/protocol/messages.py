@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 class MessagePriority(str, Enum):
     """Priority levels for agent messages."""
+
     NORMAL = "normal"
     HIGH = "high"
     INTERRUPT = "interrupt"
@@ -26,23 +27,25 @@ class MessagePriority(str, Enum):
 
 class MessageType(str, Enum):
     """Type of agent message."""
-    USER_MESSAGE = "user_message"     # Human → Agent
-    AGENT_MESSAGE = "agent_message"   # Agent → Human (info)
-    QUESTION = "question"             # Agent → Human (needs answer)
-    ANSWER = "answer"                 # Human → Agent (response to question)
-    ATTENTION = "attention"           # Agent needs user (no answer needed)
-    STATUS = "status"                 # Phase/progress update
+
+    USER_MESSAGE = "user_message"  # Human → Agent
+    AGENT_MESSAGE = "agent_message"  # Agent → Human (info)
+    QUESTION = "question"  # Agent → Human (needs answer)
+    ANSWER = "answer"  # Human → Agent (response to question)
+    ATTENTION = "attention"  # Agent needs user (no answer needed)
+    STATUS = "status"  # Phase/progress update
 
 
 class AgentQuestion(BaseModel):
     """Question from agent needing user input."""
+
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
-    question: str                     # The question text
-    context: str | None = None        # Additional context
+    question: str  # The question text
+    context: str | None = None  # Additional context
     options: list[str] | None = None  # Multiple choice options (if any)
-    default: str | None = None        # Default answer
-    required: bool = True             # Can user skip?
+    default: str | None = None  # Default answer
+    required: bool = True  # Can user skip?
     timeout_action: Literal["block", "skip", "default"] = "block"
 
 
@@ -52,6 +55,7 @@ class AgentMessage(BaseModel):
     Messages are written to `agents/{adw_id}/adw_messages.jsonl` and picked up
     by the check_messages.py hook during agent execution.
     """
+
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     message: str
     priority: MessagePriority = MessagePriority.NORMAL

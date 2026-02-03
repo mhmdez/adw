@@ -92,7 +92,5 @@ def write_ports_env(worktree_path: str, backend_port: int, frontend_port: int) -
 
     ports_file = Path(worktree_path) / ".ports.env"
     ports_file.write_text(
-        f"BACKEND_PORT={backend_port}\n"
-        f"FRONTEND_PORT={frontend_port}\n"
-        f"VITE_API_URL=http://localhost:{backend_port}\n"
+        f"BACKEND_PORT={backend_port}\nFRONTEND_PORT={frontend_port}\nVITE_API_URL=http://localhost:{backend_port}\n"
     )

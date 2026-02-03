@@ -55,6 +55,7 @@ class TaskPhase(str, Enum):
 @dataclass
 class PhaseTransition:
     """Record of a phase transition."""
+
     from_phase: TaskPhase | None
     to_phase: TaskPhase
     timestamp: datetime
@@ -65,6 +66,7 @@ class PhaseTransition:
 @dataclass
 class TaskWorkflow:
     """Workflow state for a task."""
+
     task_id: str
     current_phase: TaskPhase = TaskPhase.IDEA
     history: list[PhaseTransition] = field(default_factory=list)

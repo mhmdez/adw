@@ -273,9 +273,7 @@ Based on expertise in: {", ".join(self.specializations)}
             "best_practices_count": len(self.knowledge.best_practices),
             "known_issues_count": len(self.knowledge.known_issues),
             "learnings_count": len(self.knowledge.learnings),
-            "last_updated": (
-                self.knowledge.last_updated.isoformat() if self.knowledge.last_updated else None
-            ),
+            "last_updated": (self.knowledge.last_updated.isoformat() if self.knowledge.last_updated else None),
         }
 
 

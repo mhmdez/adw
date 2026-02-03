@@ -117,9 +117,7 @@ def format_error(error: ErrorInfo, console: Console) -> None:
     # Hint about debug mode
     if not _debug_mode and error.original_error:
         console.print()
-        console.print(
-            "[dim]Set ADW_DEBUG=1 or use --debug for more details[/dim]"
-        )
+        console.print("[dim]Set ADW_DEBUG=1 or use --debug for more details[/dim]")
 
 
 def error_file_not_found(
@@ -154,9 +152,7 @@ def error_file_not_found(
     )
 
 
-def error_dependency_missing(
-    dependency: str, install_cmd: str | None = None
-) -> ErrorInfo:
+def error_dependency_missing(dependency: str, install_cmd: str | None = None) -> ErrorInfo:
     """Create error info for missing dependency errors.
 
     Args:
@@ -185,9 +181,7 @@ def error_dependency_missing(
     )
 
 
-def error_config_invalid(
-    key: str, value: str | None = None, expected: str | None = None
-) -> ErrorInfo:
+def error_config_invalid(key: str, value: str | None = None, expected: str | None = None) -> ErrorInfo:
     """Create error info for invalid configuration errors.
 
     Args:
@@ -220,9 +214,7 @@ def error_task_not_found(task_id: str) -> ErrorInfo:
     )
 
 
-def error_git_operation(
-    operation: str, message: str, original: Exception | None = None
-) -> ErrorInfo:
+def error_git_operation(operation: str, message: str, original: Exception | None = None) -> ErrorInfo:
     """Create error info for git operation errors.
 
     Args:
@@ -246,9 +238,7 @@ def error_git_operation(
     )
 
 
-def error_network(
-    service: str, message: str, original: Exception | None = None
-) -> ErrorInfo:
+def error_network(service: str, message: str, original: Exception | None = None) -> ErrorInfo:
     """Create error info for network/API errors.
 
     Args:
@@ -274,9 +264,7 @@ def error_network(
     )
 
 
-def error_workflow(
-    workflow: str, phase: str, message: str, original: Exception | None = None
-) -> ErrorInfo:
+def error_workflow(workflow: str, phase: str, message: str, original: Exception | None = None) -> ErrorInfo:
     """Create error info for workflow execution errors.
 
     Args:
@@ -403,5 +391,3 @@ def classify_exception(exception: Exception, context: str = "operation") -> Erro
 
     # Default to internal error
     return error_internal(f"{context}: {exception}", exception)
-
-

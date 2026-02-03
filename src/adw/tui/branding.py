@@ -67,14 +67,14 @@ ERROR_MESSAGES = [
 
 # Color palette (rich markup)
 COLORS = {
-    "primary": "#00D4FF",      # Cyan
-    "secondary": "#FF6B6B",    # Coral
-    "success": "#4ADE80",      # Green
-    "warning": "#FBBF24",      # Amber
-    "error": "#EF4444",        # Red
-    "muted": "#6B7280",        # Gray
-    "accent": "#A78BFA",       # Purple
-    "highlight": "#F472B6",    # Pink
+    "primary": "#00D4FF",  # Cyan
+    "secondary": "#FF6B6B",  # Coral
+    "success": "#4ADE80",  # Green
+    "warning": "#FBBF24",  # Amber
+    "error": "#EF4444",  # Red
+    "muted": "#6B7280",  # Gray
+    "accent": "#A78BFA",  # Purple
+    "highlight": "#F472B6",  # Pink
 }
 
 # Gradient for fancy text

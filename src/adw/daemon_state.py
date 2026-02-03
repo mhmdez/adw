@@ -17,6 +17,7 @@ from pathlib import Path
 
 class DaemonStatus(str, Enum):
     """Daemon status."""
+
     STOPPED = "stopped"
     RUNNING = "running"
     PAUSED = "paused"
@@ -26,6 +27,7 @@ class DaemonStatus(str, Enum):
 @dataclass
 class DaemonState:
     """Daemon state for IPC."""
+
     pid: int | None = None
     status: DaemonStatus = DaemonStatus.STOPPED
     started_at: str | None = None
@@ -204,10 +206,7 @@ class DaemonStateManager:
 
     def remove_task(self, adw_id: str) -> None:
         """Remove a task from running list."""
-        self._state.running_tasks = [
-            t for t in self._state.running_tasks
-            if t.get("adw_id") != adw_id
-        ]
+        self._state.running_tasks = [t for t in self._state.running_tasks if t.get("adw_id") != adw_id]
         self._save()
 
     def task_completed(self, adw_id: str) -> None:

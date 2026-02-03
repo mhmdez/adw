@@ -124,10 +124,7 @@ def get_combined_expertise(
     best_practices = store.get_learnings_by_type(LearningType.BEST_PRACTICE)
 
     if domain:
-        best_practices = [
-            bp for bp in best_practices
-            if bp.domain == domain or bp.domain == "general"
-        ]
+        best_practices = [bp for bp in best_practices if bp.domain == domain or bp.domain == "general"]
 
     learned_section = build_expertise_section(
         patterns=patterns,
@@ -203,14 +200,7 @@ def inject_expertise_into_prompt(
                     if insert_pos == -1:
                         insert_pos = len(task_part)
 
-                    return (
-                        parts[0]
-                        + marker
-                        + task_part[:insert_pos]
-                        + "\n\n"
-                        + expertise
-                        + task_part[insert_pos:]
-                    )
+                    return parts[0] + marker + task_part[:insert_pos] + "\n\n" + expertise + task_part[insert_pos:]
 
         # Fallback to start position
         return f"{expertise}\n\n---\n\n{prompt}"

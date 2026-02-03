@@ -477,9 +477,7 @@ def generate_trend_report(
 
     # Alert on declining success rate
     if success_rate_trend.trend_direction == "down" and success_rate_trend.change_pct < -10:
-        alerts.append(
-            f"⚠️ Success rate declining: {success_rate_trend.change_pct:.1f}% over {period_days} days"
-        )
+        alerts.append(f"⚠️ Success rate declining: {success_rate_trend.change_pct:.1f}% over {period_days} days")
 
     # Alert on increasing costs
     if cost_trend.trend_direction == "up" and cost_trend.change_pct > 20:

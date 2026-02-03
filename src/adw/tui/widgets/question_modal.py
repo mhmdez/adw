@@ -77,7 +77,7 @@ class QuestionModal(ModalScreen[str | None]):
                 yield Static(f"Context: {self.question.context}", id="question-context")
 
             if self.question.options:
-                options_text = "\n".join(f"  {i+1}. {opt}" for i, opt in enumerate(self.question.options))
+                options_text = "\n".join(f"  {i + 1}. {opt}" for i, opt in enumerate(self.question.options))
                 yield Static(f"Options:\n{options_text}", id="question-options")
 
             yield Input(

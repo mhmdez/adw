@@ -227,9 +227,7 @@ class Workspace:
             if repo.name == name:
                 self.repos.pop(i)
                 # Also remove relationships involving this repo
-                self.relationships = [
-                    r for r in self.relationships if r.source != name and r.target != name
-                ]
+                self.relationships = [r for r in self.relationships if r.source != name and r.target != name]
                 return True
         return False
 

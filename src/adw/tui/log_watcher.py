@@ -17,6 +17,7 @@ from ..protocol.messages import AgentQuestion
 @dataclass
 class LogEvent:
     """A single log event."""
+
     timestamp: datetime
     adw_id: str
     event_type: str
@@ -29,6 +30,7 @@ class LogEvent:
 @dataclass
 class QuestionEvent:
     """Event when agent asks a question."""
+
     adw_id: str
     question: AgentQuestion
     timestamp: datetime = field(default_factory=datetime.now)
@@ -84,9 +86,7 @@ class LogWatcher:
     def unsubscribe(self, adw_id: str, callback: Callable) -> None:
         """Unsubscribe from logs."""
         if adw_id in self._subscribers:
-            self._subscribers[adw_id] = [
-                cb for cb in self._subscribers[adw_id] if cb != callback
-            ]
+            self._subscribers[adw_id] = [cb for cb in self._subscribers[adw_id] if cb != callback]
 
     async def watch(self) -> None:
         """Main watch loop."""
@@ -194,8 +194,7 @@ class LogWatcher:
                     continue
                 try:
                     msg = json.loads(line)
-                    if (msg.get("message_type") == "answer" and
-                        f"question {question_id}" in msg.get("message", "")):
+                    if msg.get("message_type") == "answer" and f"question {question_id}" in msg.get("message", ""):
                         return True
                 except Exception:
                     continue

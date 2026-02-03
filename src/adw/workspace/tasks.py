@@ -215,9 +215,7 @@ class WorkspaceTaskQueue:
 
             if task.repo_name not in by_repo_status:
                 by_repo_status[task.repo_name] = {}
-            by_repo_status[task.repo_name][status] = (
-                by_repo_status[task.repo_name].get(status, 0) + 1
-            )
+            by_repo_status[task.repo_name][status] = by_repo_status[task.repo_name].get(status, 0) + 1
 
         return {
             "total": self.total_count,

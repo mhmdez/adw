@@ -14,6 +14,7 @@ from enum import Enum
 
 class NotificationSound(str, Enum):
     """macOS notification sounds."""
+
     DEFAULT = "default"
     BASSO = "Basso"
     BLOW = "Blow"
@@ -35,6 +36,7 @@ class NotificationSound(str, Enum):
 @dataclass
 class NotificationConfig:
     """Configuration for notifications."""
+
     enabled: bool = True
     sound_success: NotificationSound = NotificationSound.GLASS
     sound_failure: NotificationSound = NotificationSound.BASSO

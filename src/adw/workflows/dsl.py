@@ -144,9 +144,7 @@ class WorkflowDefinition:
         for phase in self.phases:
             for ref in phase.parallel_with:
                 if ref not in names:
-                    raise ValueError(
-                        f"Phase '{phase.name}' references unknown parallel phase '{ref}'"
-                    )
+                    raise ValueError(f"Phase '{phase.name}' references unknown parallel phase '{ref}'")
 
     def get_phase(self, name: str) -> PhaseDefinition | None:
         """Get phase by name."""
@@ -400,9 +398,7 @@ class PromptTemplate:
 
     VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
     INCLUDE_PATTERN = re.compile(r"\{\{include\s+([^\}]+)\}\}")
-    CONDITIONAL_PATTERN = re.compile(
-        r"\{\{#if\s+(\w+)\}\}(.*?)\{\{/if\}\}", re.DOTALL
-    )
+    CONDITIONAL_PATTERN = re.compile(r"\{\{#if\s+(\w+)\}\}(.*?)\{\{/if\}\}", re.DOTALL)
 
     def __init__(
         self,
@@ -438,6 +434,7 @@ class PromptTemplate:
 
     def _process_includes(self, content: str) -> str:
         """Process include directives."""
+
         def replace_include(match: re.Match[str]) -> str:
             if self._include_count >= self.max_includes:
                 logger.warning("Max includes reached, skipping: %s", match.group(1))
@@ -457,6 +454,7 @@ class PromptTemplate:
 
     def _process_conditionals(self, content: str, context: dict[str, Any]) -> str:
         """Process conditional blocks."""
+
         def replace_conditional(match: re.Match[str]) -> str:
             condition_var = match.group(1)
             block_content = match.group(2)
@@ -471,6 +469,7 @@ class PromptTemplate:
 
     def _process_variables(self, content: str, context: dict[str, Any]) -> str:
         """Process variable substitutions."""
+
         def replace_var(match: re.Match[str]) -> str:
             var_name = match.group(1)
             value = context.get(var_name)

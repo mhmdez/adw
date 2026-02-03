@@ -125,9 +125,7 @@ class PRLinkGroup:
         """Check if all PRs are ready to merge."""
         if not self.prs:
             return False
-        return all(
-            pr.state == "open" and pr.approved and pr.mergeable for pr in self.prs
-        )
+        return all(pr.state == "open" and pr.approved and pr.mergeable for pr in self.prs)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -180,10 +178,7 @@ def _load_link_groups() -> dict[str, PRLinkGroup]:
     try:
         with open(path) as f:
             data = json.load(f)
-        return {
-            group_id: PRLinkGroup.from_dict(group_data)
-            for group_id, group_data in data.items()
-        }
+        return {group_id: PRLinkGroup.from_dict(group_data) for group_id, group_data in data.items()}
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning(f"Failed to load PR links: {e}")
         return {}
@@ -210,9 +205,7 @@ def parse_pr_url(url_or_ref: str) -> tuple[str, str, int] | None:
     import re
 
     # Full URL format
-    url_match = re.match(
-        r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url_or_ref
-    )
+    url_match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url_or_ref)
     if url_match:
         return url_match.group(1), url_match.group(2), int(url_match.group(3))
 
@@ -441,11 +434,7 @@ def list_link_groups(include_completed: bool = False) -> list[PRLinkGroup]:
     groups = _load_link_groups()
     if include_completed:
         return list(groups.values())
-    return [
-        g
-        for g in groups.values()
-        if g.status not in (LinkStatus.MERGED, LinkStatus.CANCELLED)
-    ]
+    return [g for g in groups.values() if g.status not in (LinkStatus.MERGED, LinkStatus.CANCELLED)]
 
 
 def refresh_link_group(group_id: str) -> PRLinkGroup | None:
@@ -568,11 +557,7 @@ def merge_link_group(
         return MergeResult(success=False, error="Link group was cancelled")
 
     if not force and not group.is_ready():
-        not_ready = [
-            pr.full_name
-            for pr in group.prs
-            if not (pr.state == "open" and pr.approved and pr.mergeable)
-        ]
+        not_ready = [pr.full_name for pr in group.prs if not (pr.state == "open" and pr.approved and pr.mergeable)]
         return MergeResult(
             success=False,
             error=f"Not all PRs are ready. Not ready: {', '.join(not_ready)}",
@@ -599,9 +584,7 @@ def merge_link_group(
 
             # Atomic mode: attempt rollback
             if group.atomic and result.merged_prs:
-                logger.warning(
-                    f"Atomic merge failed at {full_name}, attempting rollback"
-                )
+                logger.warning(f"Atomic merge failed at {full_name}, attempting rollback")
                 for merged_name in result.merged_prs:
                     merged_pr = group.get_pr(merged_name)
                     if merged_pr:

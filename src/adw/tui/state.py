@@ -16,6 +16,7 @@ from ..tasks import load_tasks as load_tasks_cli
 
 class BlockedReason(str, Enum):
     """Reason a task is blocked."""
+
     DEPENDENCY = "dependency"
     APPROVAL = "approval"
     EXTERNAL = "external"
@@ -27,6 +28,7 @@ class BlockedReason(str, Enum):
 @dataclass
 class TaskState:
     """State for a single task in TUI."""
+
     adw_id: str | None
     description: str
     status: AgentTaskStatus
@@ -71,6 +73,7 @@ class TaskState:
 @dataclass
 class AppState:
     """Global application state."""
+
     tasks: dict[str, TaskState] = field(default_factory=dict)
     selected_task_id: str | None = None
     focused_panel: str = "tasks"
@@ -177,13 +180,10 @@ class AppState:
         content = tasks_file.read_text()
 
         # Pattern to match task line
-        pattern = re.compile(
-            rf'\[([🟢🟡⚪]), ({adw_id})\]\s+(.+?)(?=\n\[|$)',
-            re.DOTALL
-        )
+        pattern = re.compile(rf"\[([🟢🟡⚪]), ({adw_id})\]\s+(.+?)(?=\n\[|$)", re.DOTALL)
 
         def replace_task(match):
-            description = match.group(3).split('\n')[0].strip()
+            description = match.group(3).split("\n")[0].strip()
             block = f"[🔴, {adw_id}, blocked:{reason.value}] {description}\n"
             block += f"  > Blocked: {message}\n"
             if needs:
@@ -208,18 +208,15 @@ class AppState:
         content = tasks_file.read_text()
 
         emoji = {
-            AgentTaskStatus.PENDING: '🟡',
-            AgentTaskStatus.IN_PROGRESS: '🟢',
-        }.get(new_status, '🟡')
+            AgentTaskStatus.PENDING: "🟡",
+            AgentTaskStatus.IN_PROGRESS: "🟢",
+        }.get(new_status, "🟡")
 
         # Match task with blocked info
-        pattern = re.compile(
-            rf'\[🔴, ({adw_id})(?:, blocked:\w+)?\]\s+(.+?)(?:\n\s*>.*)*(?=\n\[|\n\n|$)',
-            re.DOTALL
-        )
+        pattern = re.compile(rf"\[🔴, ({adw_id})(?:, blocked:\w+)?\]\s+(.+?)(?:\n\s*>.*)*(?=\n\[|\n\n|$)", re.DOTALL)
 
         def replace_task(match):
-            description = match.group(2).split('\n')[0].strip()
+            description = match.group(2).split("\n")[0].strip()
             return f"[{emoji}, {adw_id}] {description}"
 
         new_content = pattern.sub(replace_task, content)

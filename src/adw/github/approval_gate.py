@@ -121,20 +121,12 @@ class ApprovalRequest:
             risk_assessment=data.get("risk_assessment"),
             status=ApprovalStatus(data.get("status", "pending")),
             created_at=datetime.fromisoformat(data["created_at"]),
-            expires_at=(
-                datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
-            ),
+            expires_at=(datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None),
             rejection_reason=data.get("rejection_reason"),
-            continue_prompts=[
-                ContinuePrompt.from_dict(p) for p in data.get("continue_prompts", [])
-            ],
+            continue_prompts=[ContinuePrompt.from_dict(p) for p in data.get("continue_prompts", [])],
             reviewer=data.get("reviewer"),
-            approved_at=(
-                datetime.fromisoformat(data["approved_at"]) if data.get("approved_at") else None
-            ),
-            rejected_at=(
-                datetime.fromisoformat(data["rejected_at"]) if data.get("rejected_at") else None
-            ),
+            approved_at=(datetime.fromisoformat(data["approved_at"]) if data.get("approved_at") else None),
+            rejected_at=(datetime.fromisoformat(data["rejected_at"]) if data.get("rejected_at") else None),
         )
 
     @property

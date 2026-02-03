@@ -19,13 +19,16 @@ from textual.widgets import Input, Static
 @dataclass
 class TaskSelected(Message):
     """Message when a task is selected for viewing."""
+
     task: TaskState
 
 
 @dataclass
 class TaskCancel(Message):
     """Message when a task is cancelled."""
+
     task: TaskState
+
 
 from .. import __version__
 from ..agent.manager import AgentManager
@@ -150,6 +153,7 @@ class TaskInbox(Vertical, can_focus=True):
     def action_pause_resume(self) -> None:
         """Pause or resume daemon."""
         from ..daemon_state import DaemonStatus, read_state, request_pause, request_resume
+
         state = read_state()
         if state.status == DaemonStatus.PAUSED:
             request_resume()
@@ -236,6 +240,7 @@ class TaskInbox(Vertical, can_focus=True):
         elif task.status == TaskStatus.BLOCKED:
             # Show blocked with reason indicator
             from .state import BlockedReason
+
             reason_icons = {
                 BlockedReason.DEPENDENCY: "⏳",
                 BlockedReason.APPROVAL: "👤",
@@ -490,7 +495,7 @@ class ADWApp(App):
 
         # Show the big ASCII logo with gradient colors (configurable via ui.show_logo)
         if config.ui.show_logo:
-            for line in LOGO.strip().split('\n'):
+            for line in LOGO.strip().split("\n"):
                 detail.add_message(f"[bold {COLORS['primary']}]{line}[/]")
             detail.add_message("")
             detail.add_message(f"[bold {COLORS['accent']}]✨ {TAGLINE}[/]  [dim]—  Ship features while you sleep[/]")
@@ -586,6 +591,7 @@ class ADWApp(App):
 
     def _show_question_modal(self, adw_id: str, question: AgentQuestion) -> None:
         """Show question modal on main thread."""
+
         async def show_and_handle():
             modal = QuestionModal(question, adw_id)
             answer = await self.push_screen_wait(modal)
@@ -643,10 +649,7 @@ class ADWApp(App):
                 current_phase = spec.phase
                 detail.add_message(f"\n[bold dim]{current_phase or 'Unphased'}[/]")
 
-            status_icons = {
-                "draft": "📝", "pending": "⏳", "approved": "✅",
-                "rejected": "❌", "implemented": "🎉"
-            }
+            status_icons = {"draft": "📝", "pending": "⏳", "approved": "✅", "rejected": "❌", "implemented": "🎉"}
             icon = status_icons.get(spec.status.value, "?")
             detail.add_message(f"  {icon} {spec.id}: {spec.title[:40]}")
 
@@ -920,9 +923,26 @@ class ADWApp(App):
             return
 
         # Detect question vs task
-        question_starters = ("what", "how", "why", "where", "when", "who", "which",
-                           "can", "could", "would", "is", "are", "do", "does",
-                           "explain", "describe", "tell", "show")
+        question_starters = (
+            "what",
+            "how",
+            "why",
+            "where",
+            "when",
+            "who",
+            "which",
+            "can",
+            "could",
+            "would",
+            "is",
+            "are",
+            "do",
+            "does",
+            "explain",
+            "describe",
+            "tell",
+            "show",
+        )
         is_question = message.endswith("?") or message.lower().startswith(question_starters)
 
         if is_question:
@@ -1134,7 +1154,9 @@ class ADWApp(App):
             prompt = f"{context}Question: {question}\n\nProvide a concise, helpful answer."
 
             process = await asyncio.create_subprocess_exec(
-                "claude", "--print", prompt,
+                "claude",
+                "--print",
+                prompt,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1165,6 +1187,7 @@ class ADWApp(App):
 
         try:
             from ..init import init_project
+
             result = init_project(Path.cwd(), force=False)
 
             if result["created"]:

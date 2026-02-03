@@ -58,9 +58,7 @@ class TaskIdType(click.ParamType):
         """Return completions for task IDs."""
         task_ids = get_task_ids()
         return [
-            click.shell_completion.CompletionItem(tid)
-            for tid in task_ids
-            if tid.lower().startswith(incomplete.lower())
+            click.shell_completion.CompletionItem(tid) for tid in task_ids if tid.lower().startswith(incomplete.lower())
         ]
 
 
@@ -73,9 +71,7 @@ class WorktreeNameType(click.ParamType):
         """Return completions for worktree names."""
         names = get_worktree_names()
         return [
-            click.shell_completion.CompletionItem(name)
-            for name in names
-            if name.lower().startswith(incomplete.lower())
+            click.shell_completion.CompletionItem(name) for name in names if name.lower().startswith(incomplete.lower())
         ]
 
 
@@ -88,9 +84,7 @@ class SpecNameType(click.ParamType):
         """Return completions for spec names."""
         names = get_spec_names()
         return [
-            click.shell_completion.CompletionItem(name)
-            for name in names
-            if name.lower().startswith(incomplete.lower())
+            click.shell_completion.CompletionItem(name) for name in names if name.lower().startswith(incomplete.lower())
         ]
 
 
@@ -114,7 +108,7 @@ def setup_completion(shell: str | None = None) -> str:
             shell = "bash"
 
     if shell == "bash":
-        return '''
+        return """
 # ADW Bash completion
 # Add to ~/.bashrc: eval "$(adw completion bash)"
 
@@ -132,10 +126,10 @@ _adw_completion() {
 }
 
 complete -o default -F _adw_completion adw
-'''
+"""
 
     elif shell == "zsh":
-        return '''
+        return """
 # ADW Zsh completion
 # Add to ~/.zshrc: eval "$(adw completion zsh)"
 
@@ -165,10 +159,10 @@ _adw() {
 }
 
 compdef _adw adw
-'''
+"""
 
     elif shell == "fish":
-        return '''
+        return """
 # ADW Fish completion
 # Add to ~/.config/fish/completions/adw.fish
 
@@ -180,7 +174,7 @@ function _adw_completion
 end
 
 complete -c adw -a '(_adw_completion)' -f
-'''
+"""
 
     return f"# Unsupported shell: {shell}"
 

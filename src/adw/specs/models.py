@@ -17,6 +17,7 @@ class SpecStatus(str, Enum):
 
 class Spec(BaseModel):
     """A task specification."""
+
     id: str
     title: str
     status: SpecStatus = SpecStatus.DRAFT

@@ -63,9 +63,9 @@ def parse_tasks_md(content: str) -> list[Worktree]:
 
         # Also catch standard headers as context if no worktree set
         if line.startswith("#") and not match:
-             # Just a structural header, we could use it as context if we wanted,
-             # but for now let's just stick to the default Main if explicit Worktree missing.
-             pass
+            # Just a structural header, we could use it as context if we wanted,
+            # but for now let's just stick to the default Main if explicit Worktree missing.
+            pass
 
         # Task line
         match = TASK_PATTERN.match(line)

@@ -184,9 +184,7 @@ class TaskMetrics:
             start_time=datetime.fromisoformat(data["start_time"])
             if isinstance(data["start_time"], str)
             else data["start_time"],
-            end_time=datetime.fromisoformat(data["end_time"])
-            if data.get("end_time")
-            else None,
+            end_time=datetime.fromisoformat(data["end_time"]) if data.get("end_time") else None,
             total_duration_seconds=data.get("total_duration_seconds", 0.0),
             phases=[PhaseMetrics.from_dict(p) for p in phases_data],
             total_retries=data.get("total_retries", 0),

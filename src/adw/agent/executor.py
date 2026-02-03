@@ -14,7 +14,12 @@ from .utils import get_output_dir
 # Note: We now pass full environment to support Claude Code OAuth and other auth methods
 SAFE_ENV_VARS = [
     "ANTHROPIC_API_KEY",
-    "HOME", "USER", "PATH", "SHELL", "TERM", "LANG",
+    "HOME",
+    "USER",
+    "PATH",
+    "SHELL",
+    "TERM",
+    "LANG",
 ]
 
 
@@ -69,9 +74,7 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
                     continue
 
         # Save parsed
-        (output_dir / "cc_raw_output.json").write_text(
-            json.dumps(messages, indent=2)
-        )
+        (output_dir / "cc_raw_output.json").write_text(json.dumps(messages, indent=2))
 
         # Extract result
         result_text = ""

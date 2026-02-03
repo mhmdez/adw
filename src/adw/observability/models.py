@@ -182,9 +182,7 @@ class Session:
             start_time=datetime.fromisoformat(data["start_time"])
             if isinstance(data["start_time"], str)
             else data["start_time"],
-            end_time=datetime.fromisoformat(data["end_time"])
-            if data.get("end_time")
-            else None,
+            end_time=datetime.fromisoformat(data["end_time"]) if data.get("end_time") else None,
             task_id=data.get("task_id"),
             status=SessionStatus(data.get("status", "running")),
             metadata=metadata,

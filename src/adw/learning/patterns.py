@@ -226,10 +226,7 @@ class PatternStore:
 
         # Check for duplicate
         for existing in self._learnings:
-            if (
-                existing.type == learning.type
-                and existing.content.lower() == learning.content.lower()
-            ):
+            if existing.type == learning.type and existing.content.lower() == learning.content.lower():
                 # Update existing instead of adding duplicate
                 existing.success_count += 1
                 existing.last_used = datetime.now()
@@ -254,10 +251,7 @@ class PatternStore:
 
     def get_learnings_by_domain(self, domain: str) -> list[Learning]:
         """Get learnings for a specific domain."""
-        return [
-            item for item in self.learnings
-            if item.domain == domain or item.domain == "general"
-        ]
+        return [item for item in self.learnings if item.domain == domain or item.domain == "general"]
 
     def get_top_patterns(self, limit: int = 10, domain: str | None = None) -> list[Learning]:
         """Get the most successful patterns.
@@ -482,15 +476,9 @@ def _detect_domain_from_files(files: list[str]) -> str:
     # AI indicators
     ai_patterns = ["prompt", "agent", "llm", "embed", "rag"]
 
-    frontend_score = sum(
-        1 for f in files for p in frontend_patterns if p in f.lower()
-    )
-    backend_score = sum(
-        1 for f in files for p in backend_patterns if p in f.lower()
-    )
-    ai_score = sum(
-        1 for f in files for p in ai_patterns if p in f.lower()
-    )
+    frontend_score = sum(1 for f in files for p in frontend_patterns if p in f.lower())
+    backend_score = sum(1 for f in files for p in backend_patterns if p in f.lower())
+    ai_score = sum(1 for f in files for p in ai_patterns if p in f.lower())
 
     if ai_score > frontend_score and ai_score > backend_score:
         return "ai"

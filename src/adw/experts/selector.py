@@ -214,9 +214,7 @@ def select_experts(
     if scores:
         max_score = max(s[0] for s in scores.values())
         if max_score > 0:
-            scores = {
-                domain: (score / max_score, reasons) for domain, (score, reasons) in scores.items()
-            }
+            scores = {domain: (score / max_score, reasons) for domain, (score, reasons) in scores.items()}
 
     # Build results
     results: list[ExpertMatch] = []

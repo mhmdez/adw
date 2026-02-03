@@ -64,12 +64,8 @@ class ReviewComment:
             author=data["author"],
             path=data.get("path"),
             line=data.get("line"),
-            created_at=(
-                datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
-            ),
-            updated_at=(
-                datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None
-            ),
+            created_at=(datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None),
+            updated_at=(datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None),
             in_reply_to_id=data.get("in_reply_to_id"),
             commit_id=data.get("commit_id"),
         )
@@ -116,9 +112,7 @@ def get_pr_status(pr_number: int) -> PRInfo | None:
         PRInfo or None if not found.
     """
     try:
-        json_fields = (
-            "number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,reviewDecision"
-        )
+        json_fields = "number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,reviewDecision"
         result = subprocess.run(
             ["gh", "pr", "view", str(pr_number), "--json", json_fields],
             capture_output=True,

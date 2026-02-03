@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 @dataclass
 class SlashCommand:
     """A TUI slash command."""
+
     name: str
     description: str
     handler: Callable[[ADWApp, list[str]], None]
@@ -150,6 +151,7 @@ def handle_message(app: ADWApp, args: list[str]) -> None:
         if app.state.selected_task and app.state.selected_task.is_running and len(args) == 1:
             # Single arg is the message, send to selected task
             from ..protocol.messages import MessagePriority, write_message
+
             write_message(
                 adw_id=app.state.selected_task.adw_id,
                 message=args[0],
@@ -164,6 +166,7 @@ def handle_message(app: ADWApp, args: list[str]) -> None:
     message = " ".join(args[1:])
 
     from ..protocol.messages import MessagePriority, write_message
+
     write_message(adw_id=adw_id, message=message, priority=MessagePriority.NORMAL)
     app.notify(f"Message sent to {adw_id[:8]}")
 
@@ -198,6 +201,7 @@ def handle_update(app: ADWApp, args: list[str]) -> None:
 def handle_version(app: ADWApp, args: list[str]) -> None:
     """Show version information."""
     from .. import __version__
+
     app.notify(f"ADW version {__version__}")
 
 

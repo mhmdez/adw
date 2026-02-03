@@ -267,9 +267,7 @@ class SlackSettings:
     bot_token: str = ""
     signing_secret: str = ""
     channel_id: str = ""
-    notification_events: list[str] = field(
-        default_factory=lambda: ["task_started", "task_completed", "task_failed"]
-    )
+    notification_events: list[str] = field(default_factory=lambda: ["task_started", "task_completed", "task_failed"])
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SlackSettings:
@@ -322,9 +320,7 @@ class LinearSettings:
     api_key: str = ""
     team_id: str = ""
     poll_interval: int = 60
-    filter_states: list[str] = field(
-        default_factory=lambda: ["Backlog", "Todo", "Triage"]
-    )
+    filter_states: list[str] = field(default_factory=lambda: ["Backlog", "Todo", "Triage"])
     sync_comments: bool = True
     label_filter: list[str] = field(default_factory=list)
 
@@ -503,9 +499,7 @@ class WebhookSettings:
     """
 
     url: str = ""
-    events: list[str] = field(
-        default_factory=lambda: ["task_completed", "task_failed"]
-    )
+    events: list[str] = field(default_factory=lambda: ["task_completed", "task_failed"])
     secret: str = ""
 
     @classmethod
@@ -1092,84 +1086,104 @@ def list_config_keys() -> list[str]:
     keys = []
 
     # Core
-    keys.extend([
-        "core.tasks_file",
-        "core.default_workflow",
-        "core.default_model",
-        "core.project_root",
-        "core.auto_detect_type",
-    ])
+    keys.extend(
+        [
+            "core.tasks_file",
+            "core.default_workflow",
+            "core.default_model",
+            "core.project_root",
+            "core.auto_detect_type",
+        ]
+    )
 
     # Daemon
-    keys.extend([
-        "daemon.poll_interval",
-        "daemon.max_concurrent",
-        "daemon.auto_start",
-        "daemon.notifications",
-        "daemon.webhooks",
-    ])
+    keys.extend(
+        [
+            "daemon.poll_interval",
+            "daemon.max_concurrent",
+            "daemon.auto_start",
+            "daemon.notifications",
+            "daemon.webhooks",
+        ]
+    )
 
     # UI
-    keys.extend([
-        "ui.show_logo",
-        "ui.theme",
-        "ui.notification_sound_success",
-        "ui.notification_sound_failure",
-        "ui.notification_on_start",
-        "ui.log_level",
-    ])
+    keys.extend(
+        [
+            "ui.show_logo",
+            "ui.theme",
+            "ui.notification_sound_success",
+            "ui.notification_sound_failure",
+            "ui.notification_on_start",
+            "ui.log_level",
+        ]
+    )
 
     # Workflow
-    keys.extend([
-        "workflow.default_timeout",
-        "workflow.default_retries",
-        "workflow.test_timeout",
-        "workflow.enable_checkpoints",
-        "workflow.enable_wip_commits",
-    ])
+    keys.extend(
+        [
+            "workflow.default_timeout",
+            "workflow.default_retries",
+            "workflow.test_timeout",
+            "workflow.enable_checkpoints",
+            "workflow.enable_wip_commits",
+        ]
+    )
 
     # Workspace
-    keys.extend([
-        "workspace.enable_worktrees",
-        "workspace.default_branch",
-        "workspace.auto_cleanup",
-        "workspace.active_workspace",
-    ])
+    keys.extend(
+        [
+            "workspace.enable_worktrees",
+            "workspace.default_branch",
+            "workspace.auto_cleanup",
+            "workspace.active_workspace",
+        ]
+    )
 
     # Slack
-    keys.extend([
-        "slack.bot_token",
-        "slack.signing_secret",
-        "slack.channel_id",
-    ])
+    keys.extend(
+        [
+            "slack.bot_token",
+            "slack.signing_secret",
+            "slack.channel_id",
+        ]
+    )
 
     # Linear
-    keys.extend([
-        "linear.api_key",
-        "linear.team_id",
-        "linear.poll_interval",
-        "linear.sync_comments",
-    ])
+    keys.extend(
+        [
+            "linear.api_key",
+            "linear.team_id",
+            "linear.poll_interval",
+            "linear.sync_comments",
+        ]
+    )
 
     # Notion
-    keys.extend([
-        "notion.api_key",
-        "notion.database_id",
-        "notion.poll_interval",
-    ])
+    keys.extend(
+        [
+            "notion.api_key",
+            "notion.database_id",
+            "notion.poll_interval",
+        ]
+    )
 
     # GitHub
-    keys.extend([
-        "github.token",
-        "github.owner",
-        "github.repo",
-        "github.poll_interval",
-    ])
+    keys.extend(
+        [
+            "github.token",
+            "github.owner",
+            "github.repo",
+            "github.poll_interval",
+        ]
+    )
 
     # Webhook
-    keys.extend([
-        "webhook.url",
-        "webhook.secret",
-    ])
+    keys.extend(
+        [
+            "webhook.url",
+            "webhook.secret",
+        ]
+    )
 
     return keys

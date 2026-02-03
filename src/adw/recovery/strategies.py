@@ -420,18 +420,10 @@ class RecoveryOrchestrator:
     """
 
     max_attempts: int = 3
-    retry_strategy: RetryRecoveryStrategy = field(
-        default_factory=RetryRecoveryStrategy
-    )
-    fix_strategy: FixRecoveryStrategy = field(
-        default_factory=FixRecoveryStrategy
-    )
-    simplify_strategy: SimplifyRecoveryStrategy = field(
-        default_factory=SimplifyRecoveryStrategy
-    )
-    escalate_strategy: EscalateRecoveryStrategy = field(
-        default_factory=EscalateRecoveryStrategy
-    )
+    retry_strategy: RetryRecoveryStrategy = field(default_factory=RetryRecoveryStrategy)
+    fix_strategy: FixRecoveryStrategy = field(default_factory=FixRecoveryStrategy)
+    simplify_strategy: SimplifyRecoveryStrategy = field(default_factory=SimplifyRecoveryStrategy)
+    escalate_strategy: EscalateRecoveryStrategy = field(default_factory=EscalateRecoveryStrategy)
     current_attempt: int = 0
     attempt_history: list[dict[str, Any]] = field(default_factory=list)
 
@@ -475,14 +467,16 @@ class RecoveryOrchestrator:
         )
 
         # Record attempt
-        self.attempt_history.append({
-            "attempt": self.current_attempt,
-            "strategy": strategy.strategy_type.value,
-            "error": error_message,
-            "success": result.success,
-            "message": result.message,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self.attempt_history.append(
+            {
+                "attempt": self.current_attempt,
+                "strategy": strategy.strategy_type.value,
+                "error": error_message,
+                "success": result.success,
+                "message": result.message,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         return result
 

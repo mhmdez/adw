@@ -65,9 +65,7 @@ class SlackConfig:
     bot_token: str
     signing_secret: str
     channel_id: str | None = None
-    notification_events: list[str] = field(
-        default_factory=lambda: ["task_started", "task_completed", "task_failed"]
-    )
+    notification_events: list[str] = field(default_factory=lambda: ["task_started", "task_completed", "task_failed"])
 
     @classmethod
     def from_env(cls) -> SlackConfig | None:
@@ -226,9 +224,7 @@ class SlackClient:
             if e.code == 429:
                 retry_after = e.headers.get("Retry-After", "60")
                 self._rate_limit_reset = time.time() + float(retry_after)
-                console.print(
-                    f"[yellow]Rate limited, retry after {retry_after}s[/yellow]"
-                )
+                console.print(f"[yellow]Rate limited, retry after {retry_after}s[/yellow]")
             else:
                 error_body = e.read().decode("utf-8") if e.fp else ""
                 console.print(f"[red]Slack API error {e.code}: {error_body}[/red]")
@@ -776,9 +772,7 @@ def format_status_message(
             "awaiting_review": ":eyes:",
         }.get(task.get("status", "pending"), ":grey_question:")
 
-        task_lines.append(
-            f"{status_emoji} `{task.get('adw_id', '?')[:8]}` {task.get('description', 'Unknown')[:50]}"
-        )
+        task_lines.append(f"{status_emoji} `{task.get('adw_id', '?')[:8]}` {task.get('description', 'Unknown')[:50]}")
 
     tasks_text = "\n".join(task_lines)
 
@@ -1357,9 +1351,7 @@ def _handle_reject_interaction(
                 "label": {"type": "plain_text", "text": "Reason"},
             },
         ],
-        "private_metadata": json.dumps(
-            {"adw_id": adw_id, "response_url": payload.response_url}
-        ),
+        "private_metadata": json.dumps({"adw_id": adw_id, "response_url": payload.response_url}),
     }
 
     client.open_modal(trigger_id=payload.trigger_id, view=modal)
@@ -1464,7 +1456,7 @@ def _handle_view_details_interaction(
         details = f"""*Task Details: `{adw_id}`*
 
 *Phase:* {state.current_phase}
-*Completed Phases:* {', '.join(state.phases_completed) if state.phases_completed else 'None'}
+*Completed Phases:* {", ".join(state.phases_completed) if state.phases_completed else "None"}
 *Created:* {state.created_at}
 *Updated:* {state.updated_at}
 """
@@ -1860,9 +1852,7 @@ def create_slack_app(config: SlackConfig) -> Any:
 
         return JSONResponse(content=response)
 
-    async def _handle_view_submission(
-        payload_data: dict[str, Any], config: SlackConfig
-    ) -> JSONResponse:
+    async def _handle_view_submission(payload_data: dict[str, Any], config: SlackConfig) -> JSONResponse:
         """Handle modal view submission."""
         callback_id = payload_data.get("view", {}).get("callback_id", "")
 
@@ -1871,16 +1861,10 @@ def create_slack_app(config: SlackConfig) -> Any:
 
             # Get reason from input
             values = payload_data.get("view", {}).get("state", {}).get("values", {})
-            reason = (
-                values.get("reason_block", {})
-                .get("reason_input", {})
-                .get("value", "No reason provided")
-            )
+            reason = values.get("reason_block", {}).get("reason_input", {}).get("value", "No reason provided")
 
             # Get metadata
-            metadata = json.loads(
-                payload_data.get("view", {}).get("private_metadata", "{}")
-            )
+            metadata = json.loads(payload_data.get("view", {}).get("private_metadata", "{}"))
             response_url = metadata.get("response_url")
 
             # Reject the task

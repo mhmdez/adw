@@ -182,9 +182,7 @@ def mark_done(
     update_context: bool = True,
 ) -> bool:
     """Mark task as done and optionally archive to history."""
-    result = update_task_status(
-        path, description, TaskStatus.DONE, adw_id=adw_id, commit_hash=commit
-    )
+    result = update_task_status(path, description, TaskStatus.DONE, adw_id=adw_id, commit_hash=commit)
 
     if result and archive:
         archive_to_history(path, description, "completed", adw_id, duration=duration)
@@ -195,6 +193,7 @@ def mark_done(
         # Update CLAUDE.md progress log
         try:
             from ..context import update_progress_log
+
             update_progress_log(path.parent, description, success=True)
         except Exception:
             pass  # Don't fail task completion on context update failure
@@ -210,9 +209,7 @@ def mark_failed(
     archive: bool = True,
 ) -> bool:
     """Mark task as failed and optionally archive to history."""
-    result = update_task_status(
-        path, description, TaskStatus.FAILED, adw_id=adw_id, error_message=error
-    )
+    result = update_task_status(path, description, TaskStatus.FAILED, adw_id=adw_id, error_message=error)
 
     if result and archive:
         archive_to_history(path, description, "failed", adw_id, error=error)

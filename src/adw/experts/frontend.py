@@ -270,9 +270,7 @@ export function Component({ prop }: Props) {
 ### Testing Template
 
 ```typescript
-import {{ render, screen, fireEvent }} from '@testing-library/{
-            "vue" if framework.lower() == "vue" else "react"
-        }';
+import {{ render, screen, fireEvent }} from '@testing-library/{"vue" if framework.lower() == "vue" else "react"}';
 import {{ Component }} from './Component';
 
 describe('Component', () => {{

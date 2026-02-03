@@ -418,9 +418,7 @@ class EventDB:
             Session(
                 id=row["id"],
                 start_time=datetime.fromisoformat(row["start_time"]),
-                end_time=datetime.fromisoformat(row["end_time"])
-                if row["end_time"]
-                else None,
+                end_time=datetime.fromisoformat(row["end_time"]) if row["end_time"] else None,
                 task_id=row["task_id"],
                 status=SessionStatus(row["status"]),
                 metadata=json.loads(row["metadata"]) if row["metadata"] else {},
@@ -438,9 +436,7 @@ class EventDB:
         Returns:
             List of events for the session.
         """
-        return self.get_events(
-            EventFilter(session_id=session_id, limit=limit)
-        )
+        return self.get_events(EventFilter(session_id=session_id, limit=limit))
 
     def get_recent_events(self, limit: int = 50) -> list[Event]:
         """Get most recent events.

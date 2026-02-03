@@ -24,13 +24,7 @@ class WorkflowManager:
             self._workflows[task_id] = workflow
         return self._workflows[task_id]
 
-    def transition(
-        self,
-        task_id: str,
-        phase: TaskPhase,
-        reason: str | None = None,
-        actor: str = "system"
-    ) -> bool:
+    def transition(self, task_id: str, phase: TaskPhase, reason: str | None = None, actor: str = "system") -> bool:
         """Transition a task to a new phase."""
         workflow = self.get_workflow(task_id)
         if workflow.transition_to(phase, reason, actor):
@@ -58,13 +52,15 @@ class WorkflowManager:
             )
 
             for h in data.get("history", []):
-                workflow.history.append(PhaseTransition(
-                    from_phase=TaskPhase(h["from_phase"]) if h.get("from_phase") else None,
-                    to_phase=TaskPhase(h["to_phase"]),
-                    timestamp=datetime.fromisoformat(h["timestamp"]),
-                    reason=h.get("reason"),
-                    actor=h.get("actor", "system"),
-                ))
+                workflow.history.append(
+                    PhaseTransition(
+                        from_phase=TaskPhase(h["from_phase"]) if h.get("from_phase") else None,
+                        to_phase=TaskPhase(h["to_phase"]),
+                        timestamp=datetime.fromisoformat(h["timestamp"]),
+                        reason=h.get("reason"),
+                        actor=h.get("actor", "system"),
+                    )
+                )
 
             return workflow
         except Exception:

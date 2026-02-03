@@ -70,10 +70,7 @@ class DiscussModal(ModalScreen[dict | None]):
             yield Static("💬 Task Discussion", id="discuss-header")
             yield Static("", id="discuss-log")
 
-            yield Input(
-                placeholder="Type your message... (Enter to send)",
-                id="discuss-input"
-            )
+            yield Input(placeholder="Type your message... (Enter to send)", id="discuss-input")
 
             with Horizontal(id="button-row"):
                 yield Button("Send", variant="primary", id="send-btn")
@@ -121,7 +118,8 @@ class DiscussModal(ModalScreen[dict | None]):
 
         try:
             process = await asyncio.create_subprocess_exec(
-                "claude", "--print",
+                "claude",
+                "--print",
                 f"You are helping plan a task. Be concise.\n\nUser: {user_message}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -149,11 +147,13 @@ class DiscussModal(ModalScreen[dict | None]):
         """Generate spec from discussion."""
         self._add_system_message("Generating spec...")
 
-        conversation = "\n".join([
-            f"{'User' if m['role'] == 'user' else 'AI'}: {m['content']}"
-            for m in self.messages
-            if m['role'] in ('user', 'assistant')
-        ])
+        conversation = "\n".join(
+            [
+                f"{'User' if m['role'] == 'user' else 'AI'}: {m['content']}"
+                for m in self.messages
+                if m["role"] in ("user", "assistant")
+            ]
+        )
 
         prompt = f"""Based on this discussion, generate a task spec in markdown:
 
@@ -169,7 +169,9 @@ Keep it concise."""
 
         try:
             process = await asyncio.create_subprocess_exec(
-                "claude", "--print", prompt,
+                "claude",
+                "--print",
+                prompt,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -196,12 +198,14 @@ Keep it concise."""
         if not self.spec_content:
             return
 
-        self.dismiss({
-            "action": "approve",
-            "idea": self.initial_idea,
-            "spec": self.spec_content,
-            "messages": self.messages,
-        })
+        self.dismiss(
+            {
+                "action": "approve",
+                "idea": self.initial_idea,
+                "spec": self.spec_content,
+                "messages": self.messages,
+            }
+        )
 
     def action_cancel(self) -> None:
         self.dismiss(None)
