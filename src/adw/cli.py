@@ -1755,6 +1755,209 @@ def slack_notify(adw_id: str, event: str, error: str | None, pr_url: str | None)
         console.print("[dim]Task may not have been created via Slack[/dim]")
 
 
+# ============== Telegram Integration Commands ==============
+
+
+@main.group()
+def telegram() -> None:
+    """Telegram bot integration commands.
+
+    Receive commands via Telegram bot and send progress updates.
+    Enables bidirectional communication between Telegram and ADW.
+
+    \\b
+    Configuration (environment variables):
+        TELEGRAM_BOT_TOKEN    Bot token from @BotFather (required)
+        TELEGRAM_CHAT_ID      Default chat for notifications (optional)
+
+    Or use ~/.adw/config.toml:
+        [telegram]
+        bot_token = "123456789:ABC..."
+        chat_id = "123456789"
+
+    \\b
+    Bot commands available in Telegram:
+        /task <desc>      - Create a new task
+        /status [id]      - Show task status
+        /approve <id>     - Approve a pending task
+        /reject <id>      - Reject a pending task
+        /help             - Show help
+    """
+    pass
+
+
+@telegram.command("start")
+@click.option(
+    "--timeout",
+    "-t",
+    type=int,
+    default=30,
+    help="Long polling timeout in seconds (default: 30)",
+)
+def telegram_start(timeout: int) -> None:
+    """Start the Telegram bot with long polling.
+
+    Listens for commands and interactive buttons via Telegram Bot API.
+    Uses long polling (no webhook server required).
+
+    \\b
+    Bot Setup:
+    1. Talk to @BotFather on Telegram
+    2. Create a new bot with /newbot
+    3. Copy the bot token
+    4. Set TELEGRAM_BOT_TOKEN environment variable
+
+    \\b
+    Examples:
+        adw telegram start              # Start with default timeout
+        adw telegram start -t 60        # 60 second poll timeout
+    """
+    from .integrations.telegram import TelegramConfig, run_telegram_bot
+
+    config = TelegramConfig.load()
+
+    if not config:
+        console.print("[red]Telegram not configured[/red]")
+        console.print()
+        console.print("[dim]Set environment variables:[/dim]")
+        console.print("  export TELEGRAM_BOT_TOKEN=123456789:ABC...")
+        console.print()
+        console.print("[dim]Or add to ~/.adw/config.toml:[/dim]")
+        console.print("  [telegram]")
+        console.print('  bot_token = "123456789:ABC..."')
+        raise SystemExit(1)
+
+    # Override timeout if specified
+    config.poll_timeout = timeout
+
+    console.print("[bold cyan]Starting Telegram bot[/bold cyan]")
+    console.print()
+    console.print(f"[dim]Poll timeout: {timeout}s[/dim]")
+    console.print()
+
+    try:
+        run_telegram_bot(config)
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Bot stopped by user[/yellow]")
+
+
+@telegram.command("test")
+def telegram_test() -> None:
+    """Test Telegram connection and configuration.
+
+    Verifies that the bot token is valid and the bot is connected.
+
+    \\b
+    Examples:
+        adw telegram test
+    """
+    from .integrations.telegram import test_telegram_connection
+
+    console.print("[bold cyan]Testing Telegram connection...[/bold cyan]")
+    console.print()
+
+    success = test_telegram_connection()
+
+    if not success:
+        raise SystemExit(1)
+
+
+@telegram.command("send")
+@click.argument("message")
+@click.option(
+    "--chat-id",
+    "-c",
+    default=None,
+    help="Chat ID to send to (uses default if not specified)",
+)
+def telegram_send(message: str, chat_id: str | None) -> None:
+    """Send a test message to a Telegram chat.
+
+    \\b
+    Examples:
+        adw telegram send "Hello from ADW!"
+        adw telegram send "Test" -c 123456789
+    """
+    from .integrations.telegram import TelegramClient, TelegramConfig
+
+    config = TelegramConfig.load()
+
+    if not config:
+        console.print("[red]Telegram not configured[/red]")
+        raise SystemExit(1)
+
+    target_chat = chat_id or config.chat_id
+
+    if not target_chat:
+        console.print("[red]No chat_id specified or configured[/red]")
+        console.print("[dim]Use --chat-id or set TELEGRAM_CHAT_ID[/dim]")
+        raise SystemExit(1)
+
+    client = TelegramClient(config.bot_token)
+    result = client.send_message(target_chat, message)
+
+    if result:
+        console.print(f"[green]✓ Message sent to {target_chat}[/green]")
+    else:
+        console.print("[red]✗ Failed to send message[/red]")
+        raise SystemExit(1)
+
+
+@telegram.command("notify")
+@click.argument("adw_id")
+@click.option(
+    "--event",
+    "-e",
+    type=click.Choice(["started", "completed", "failed", "approval"]),
+    default="completed",
+    help="Event type to notify",
+)
+@click.option(
+    "--error",
+    default=None,
+    help="Error message (for failed events)",
+)
+@click.option(
+    "--pr-url",
+    default=None,
+    help="PR URL (for completed events)",
+)
+def telegram_notify(adw_id: str, event: str, error: str | None, pr_url: str | None) -> None:
+    """Send a notification for a task to the configured Telegram chat.
+
+    \\b
+    Examples:
+        adw telegram notify abc123de --event completed
+        adw telegram notify abc123de --event failed --error "Tests failed"
+        adw telegram notify abc123de --event completed --pr-url https://...
+    """
+    from .integrations.telegram import (
+        notify_task_completed,
+        notify_task_failed,
+        notify_task_started,
+        request_approval,
+    )
+
+    if event == "started":
+        success = notify_task_started(adw_id, "Task from CLI")
+    elif event == "completed":
+        success = notify_task_completed(adw_id, pr_url=pr_url)
+    elif event == "failed":
+        success = notify_task_failed(adw_id, error=error)
+    elif event == "approval":
+        success = request_approval(adw_id)
+    else:
+        console.print(f"[red]Unknown event: {event}[/red]")
+        raise SystemExit(1)
+
+    if success:
+        console.print(f"[green]✓ Notification sent for {adw_id}[/green]")
+    else:
+        console.print("[yellow]Failed to send notification[/yellow]")
+        console.print("[dim]Check TELEGRAM_CHAT_ID is configured[/dim]")
+
+
 # ============== Linear Integration Commands ==============
 
 

@@ -23,7 +23,7 @@ class ADWState(BaseModel):
     task_tags: list[str] = Field(default_factory=list)
 
     # Workflow
-    workflow_type: Literal["simple", "standard", "full", "prototype", "sdlc"] = "standard"
+    workflow_type: str = "standard"
     current_phase: str = "init"
     phases_completed: list[str] = Field(default_factory=list)
 

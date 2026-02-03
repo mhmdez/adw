@@ -4,8 +4,8 @@
 
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
-**Version:** 0.5.31
-**Status:** Phase 11 COMPLETE - All simplification tasks finished. P1-14 web dashboard implemented. Total: 1539 tests passing. Code quality: all ruff lint checks pass.
+**Version:** 0.5.32
+**Status:** Phase 11 COMPLETE - All simplification tasks finished. P7-10 Telegram Bot integration implemented. Total: 1593 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -1022,10 +1022,34 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - Helper functions (3 tests)
   - Integration tests (2 tests)
 
-### Telegram Bot (BONUS)
+### Telegram Bot Integration
 
-- [ ] **P7-10** Create `src/adw/integrations/telegram.py`
-  - Commands: `/task`, `/status`, `/approve`
+- [x] **P7-10** Create `src/adw/integrations/telegram.py`
+  - `TelegramConfig` with env var and config file support
+  - `TelegramClient` for Bot API calls using urllib (no external dependencies)
+  - `TelegramTaskState` for task-to-chat mapping persistence
+  - Commands: `/task`, `/status`, `/approve`, `/reject`, `/help`
+  - Inline keyboards for approve/reject/retry buttons
+  - Progress notifications: `notify_task_started()`, `notify_task_completed()`, `notify_task_failed()`
+  - `request_approval()` for approval gate integration
+  - Long polling bot runner with graceful shutdown
+  - CLI commands: `adw telegram start`, `adw telegram test`, `adw telegram send`, `adw telegram notify`
+  - State persistence at `~/.adw/telegram_state.json`
+  - **Files:** `src/adw/integrations/telegram.py`, `src/adw/cli.py`
+
+### Tests Added
+- `tests/test_telegram.py` - 54 tests covering:
+  - TelegramConfig creation and loading (8 tests)
+  - TelegramTaskState serialization (5 tests)
+  - State management persistence (4 tests)
+  - Message formatting (7 tests)
+  - HTML escaping (5 tests)
+  - Inline keyboard creation (2 tests)
+  - TelegramClient API calls (7 tests)
+  - Command parsing and routing (4 tests)
+  - TOML fallback parser (5 tests)
+  - Integration tests (4 tests)
+  - Callback query handling (3 tests)
 
 ---
 

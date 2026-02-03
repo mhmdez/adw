@@ -1,4 +1,4 @@
-"""ADW external integrations (GitHub, Notion, Linear, Slack, etc.)."""
+"""ADW external integrations (GitHub, Notion, Linear, Slack, Telegram, etc.)."""
 
 from __future__ import annotations
 
@@ -28,6 +28,18 @@ from .notion import (
     run_notion_watcher,
     test_notion_connection,
 )
+from .telegram import (
+    TelegramClient,
+    TelegramConfig,
+    TelegramTaskState,
+    notify_task_completed,
+    notify_task_failed,
+    notify_task_started,
+    request_approval,
+    run_telegram_bot,
+    send_test_message,
+    test_telegram_connection,
+)
 
 __all__ = [
     # GitHub
@@ -53,4 +65,15 @@ __all__ = [
     "process_notion_tasks",
     "run_notion_watcher",
     "test_notion_connection",
+    # Telegram
+    "TelegramClient",
+    "TelegramConfig",
+    "TelegramTaskState",
+    "run_telegram_bot",
+    "test_telegram_connection",
+    "send_test_message",
+    "notify_task_started",
+    "notify_task_completed",
+    "notify_task_failed",
+    "request_approval",
 ]

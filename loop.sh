@@ -2,33 +2,47 @@
 # ADW Ralph Wiggum Loop Script
 # Based on Geoffrey Huntley's methodology
 #
-# Usage: ./loop.sh [plan|build] [max_iterations]
+# Usage: ./loop.sh [plan|build|phase3] [max_iterations] [--gemini]
 # Examples:
 #   ./loop.sh              # Build mode, unlimited iterations
 #   ./loop.sh 20           # Build mode, max 20 iterations
 #   ./loop.sh plan         # Plan mode, unlimited iterations
-#   ./loop.sh plan 5       # Plan mode, max 5 iterations
+#   ./loop.sh phase3 10 --gemini  # Phase 3 mode, 10 iters, using Gemini
 
 set -e
 
+# Defaults
+MODE="build"
+PROMPT_FILE="PROMPT_build.md"
+MAX_ITERATIONS=0
+USE_GEMINI=false
+export GEMINI_API_KEY="AIzaSyDGOFqwlTRmkECsWjACdAbefKRO7NP0ggk"
+
 # Parse arguments
-if [ "$1" = "plan" ]; then
-    MODE="plan"
-    PROMPT_FILE="PROMPT_plan.md"
-    MAX_ITERATIONS=${2:-0}
-elif [ "$1" = "build" ]; then
-    MODE="build"
-    PROMPT_FILE="PROMPT_build.md"
-    MAX_ITERATIONS=${2:-0}
-elif [[ "$1" =~ ^[0-9]+$ ]]; then
-    MODE="build"
-    PROMPT_FILE="PROMPT_build.md"
-    MAX_ITERATIONS=$1
-else
-    MODE="build"
-    PROMPT_FILE="PROMPT_build.md"
-    MAX_ITERATIONS=0
-fi
+for arg in "$@"; do
+    case $arg in
+        plan)
+            MODE="plan"
+            PROMPT_FILE="PROMPT_plan.md"
+            ;;
+        build)
+            MODE="build"
+            PROMPT_FILE="PROMPT_build.md"
+            ;;
+        phase3)
+            MODE="phase3"
+            PROMPT_FILE="PROMPT_phase3.md"
+            ;;
+        --gemini)
+            USE_GEMINI=true
+            ;;
+        *)
+            if [[ "$arg" =~ ^[0-9]+$ ]]; then
+                MAX_ITERATIONS=$arg
+            fi
+            ;;
+    esac
+done
 
 ITERATION=0
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
@@ -41,6 +55,7 @@ echo "🐛 ADW Ralph Wiggum Loop"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Mode: $MODE"
 echo "Prompt: $PROMPT_FILE"
+echo "Engine: $( [ "$USE_GEMINI" = true ] && echo "Gemini (Custom)" || echo "Claude" )"
 echo "Branch: $CURRENT_BRANCH"
 echo "Log: $LOG_FILE"
 [ $MAX_ITERATIONS -gt 0 ] && echo "Max: $MAX_ITERATIONS iterations"
@@ -55,15 +70,6 @@ fi
 # Check for specs
 SPEC_COUNT=$(find specs -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "📋 Found $SPEC_COUNT spec files"
-
-# Initialize IMPLEMENTATION_PLAN.md if not exists
-if [ ! -f "IMPLEMENTATION_PLAN.md" ]; then
-    echo "📝 Creating IMPLEMENTATION_PLAN.md..."
-    echo "# ADW Implementation Plan" > IMPLEMENTATION_PLAN.md
-    echo "" >> IMPLEMENTATION_PLAN.md
-    echo "*Auto-generated. Updated by Ralph loop.*" >> IMPLEMENTATION_PLAN.md
-    echo "" >> IMPLEMENTATION_PLAN.md
-fi
 
 while true; do
     if [ $MAX_ITERATIONS -gt 0 ] && [ $ITERATION -ge $MAX_ITERATIONS ]; then
@@ -81,11 +87,22 @@ while true; do
     echo "════════════════════ ITERATION $ITERATION ($TIMESTAMP) ════════════════════" | tee -a "$LOG_FILE"
     echo "" | tee -a "$LOG_FILE"
 
-    # Run Ralph iteration with selected prompt
-    cat "$PROMPT_FILE" | claude -p \
-        --dangerously-skip-permissions \
-        --model opus \
-        --verbose 2>&1 | tee -a "$LOG_FILE"
+    # Run Ralph iteration
+    if [ "$USE_GEMINI" = true ]; then
+        # Gemini Mode (using custom wrapper in tools/gemini-cli/cli.py)
+        echo "🤖 Running Gemini..."
+        # We invoke the python script directly.
+        # Assuming uv is available and .venv is set up in tools/gemini-cli
+        cd tools/gemini-cli && uv run cli.py "$(cat ../../$PROMPT_FILE)" 2>&1 | tee -a "../../$LOG_FILE"
+        cd ../..
+    else
+        # Claude Mode
+        echo "🤖 Running Claude..."
+        cat "$PROMPT_FILE" | claude -p \
+            --dangerously-skip-permissions \
+            --model opus \
+            --verbose 2>&1 | tee -a "$LOG_FILE"
+    fi
 
     # Check for completion signal
     if grep -q "RALPH_COMPLETE" "$LOG_FILE"; then
@@ -104,7 +121,7 @@ while true; do
         }
     fi
 
-    # Brief pause between iterations (fresh context)
+    # Brief pause between iterations
     echo "⏳ Cooling down before next iteration..."
     sleep 3
 done

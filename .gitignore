@@ -52,3 +52,9 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# ADW - AI Developer Workflow
+agents/
+.adw/
+trees/
+*.adw.log

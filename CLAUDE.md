@@ -636,3 +636,23 @@ Systems that learn and evolve:
 ---
 
 **Remember**: ADW builds itself. When in doubt, check how existing code handles similar patterns. The codebase is self-documenting through its structure and conventions.
+
+## Multi-Agent Orchestration
+
+This project uses ADW (AI Developer Workflow) for task orchestration.
+
+### Key Commands (in Claude Code)
+
+| Command | Purpose |
+|---------|---------|
+| `/discuss` | Interactive planning for complex features |
+| `/approve_spec` | Approve spec, create tasks |
+| `/verify` | Review implementation before commit |
+| `/status` | Check what needs your attention |
+| `/build` | Direct implementation for simple tasks |
+
+### Relevant Files
+
+- `tasks.md` - Multi-Agent Task List
+- `specs/` - Feature specifications
+- `.claude/commands/` - Slash commands

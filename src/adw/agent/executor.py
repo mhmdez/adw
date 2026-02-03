@@ -138,6 +138,11 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
             duration_seconds=0,
         )
     except Exception as e:
+        # Create output dir if it doesn't exist to log the crash
+        if not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "crash.log").write_text(str(e))
+
         return AgentPromptResponse(
             output="",
             success=False,
