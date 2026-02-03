@@ -22,42 +22,48 @@ The dsl module provides YAML-based workflow definitions that can be customized
 without modifying ADW source code. Workflows are stored in ~/.adw/workflows/.
 """
 
-from .adaptive import (
-    AdaptiveConfig,
-    AdaptivePhase,
-    PhaseConfig,
-    PhaseResult,
-    TaskComplexity,
-    detect_complexity,
-    format_results_summary,
-    run_adaptive_workflow,
-    # Backward compatibility aliases
-    run_sdlc_workflow,
-    run_simple_workflow,
-    run_standard_workflow,
-)
-from .dsl import (
-    LoopCondition,
-    # Core classes
-    PhaseCondition,
-    PhaseDefinition,
-    PromptTemplate,
-    WorkflowDefinition,
-    create_workflow,
-    delete_workflow,
-    ensure_builtin_workflows,
-    get_active_workflow_name,
-    get_workflow,
-    get_workflows_dir,
-    # Library management
-    list_workflows,
-    load_workflow,
-    # Parsing/serialization
-    parse_workflow_yaml,
-    save_workflow,
-    serialize_workflow,
-    set_active_workflow,
-)
+# Import local submodules safely to avoid circular dependencies
+try:
+    from .adaptive import (
+        AdaptiveConfig,
+        AdaptivePhase,
+        PhaseConfig,
+        PhaseResult,
+        TaskComplexity,
+        detect_complexity,
+        format_results_summary,
+        run_adaptive_workflow,
+        # Backward compatibility aliases
+        run_sdlc_workflow,
+        run_simple_workflow,
+        run_standard_workflow,
+    )
+    from .dsl import (
+        LoopCondition,
+        # Core classes
+        PhaseCondition,
+        PhaseDefinition,
+        PromptTemplate,
+        WorkflowDefinition,
+        create_workflow,
+        delete_workflow,
+        ensure_builtin_workflows,
+        get_active_workflow_name,
+        get_workflow,
+        get_workflows_dir,
+        # Library management
+        list_workflows,
+        load_workflow,
+        # Parsing/serialization
+        parse_workflow_yaml,
+        save_workflow,
+        serialize_workflow,
+        set_active_workflow,
+    )
+except ImportError:
+    # If runpy or circular import issues occur, we skip top-level imports
+    # and let modules import what they need locally
+    pass
 
 __all__ = [
     # Adaptive workflow (primary)
