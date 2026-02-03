@@ -5,7 +5,7 @@
 **Last Updated:** 2026-02-03
 **Current Phase:** 11 (Simplification & Polish)
 **Version:** 0.5.27
-**Status:** Phase 11 IN PROGRESS - P11-1 (adaptive workflow), P11-2 (plugin simplification), P11-3 (TUI cleanup), P11-4 (config consolidation), P11-5 (error messages), P11-6 (help & discoverability) complete. Unified workflows into single adaptive SDLC with auto-complexity detection. Total: 1528 tests passing. Code quality: all ruff lint checks pass.
+**Status:** Phase 11 COMPLETE - All simplification tasks finished. P11-7 added comprehensive documentation. Total: 1528 tests passing. Code quality: all ruff lint checks pass.
 
 ---
 
@@ -26,7 +26,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 | 8 - Failure Recovery | **COMPLETE** | **100%** |
 | 9 - Reporting | **COMPLETE** | **100%** |
 | 10 - Customization | **COMPLETE** | **100%** |
-| 11 - Simplification | **IN PROGRESS** | **86%** (6/7 tasks) |
+| 11 - Simplification | **COMPLETE** | **100%** |
 
 **Existing Strengths:**
 - Agent subsystem is production-ready (executor, manager, state, worktree, ports)
@@ -1373,7 +1373,7 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
 
 **Priority:** LOW
 **Spec:** `specs/phase-11/simplification.md`
-**Status:** In Progress (86% - P11-1, P11-2, P11-3, P11-4, P11-5, P11-6 complete)
+**Status:** ✅ COMPLETE (100%)
 
 ### Tasks
 
@@ -1474,11 +1474,28 @@ Based on comprehensive codebase analysis comparing `src/adw/*` against `specs/ph
   - **Files:** `src/adw/help.py`, `src/adw/cli.py`, `docs/examples/*.md`
   - **Tests:** `tests/test_help.py` - 51 tests covering all help functionality
 
-- [ ] **P11-7** Write documentation
-  - Getting started guide (< 5 minutes)
-  - Complete reference
-  - Common recipes
-  - Troubleshooting guide
+- [x] **P11-7** Write documentation ✅
+  - Created `docs/GETTING_STARTED.md` - Comprehensive 5-minute getting started guide
+    - Prerequisites, installation, first task, monitoring, task format, workflows
+    - Quick reference card with all common commands
+  - Created `docs/CLI_REFERENCE.md` - Complete CLI command reference (56+ commands)
+    - All command groups documented with options and examples
+    - Environment variables summary, exit codes
+  - Created `docs/CONFIGURATION.md` - Full configuration reference
+    - All config sections with options, types, defaults
+    - Environment variable overrides
+    - Complete example configuration file
+  - Created `docs/TROUBLESHOOTING.md` - Common issues and solutions
+    - Installation, initialization, execution, TUI, worktree issues
+    - Integration debugging (Slack, Linear, Notion, GitHub)
+    - Recovery operations and common error messages
+  - Created `docs/examples/INTEGRATIONS.md` - Integration guides
+    - Slack setup and usage (slash commands, notifications, buttons)
+    - Linear integration (bidirectional sync, labels, priorities)
+    - Notion integration (database schema, property mapping)
+    - Webhook API (inbound triggers, API keys, rate limiting)
+  - **Files:** `docs/GETTING_STARTED.md`, `docs/CLI_REFERENCE.md`, `docs/CONFIGURATION.md`, `docs/TROUBLESHOOTING.md`, `docs/examples/INTEGRATIONS.md`
+  - **Tests:** 1528 tests passing, all ruff lint checks pass
 
 ---
 
