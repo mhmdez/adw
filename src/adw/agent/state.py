@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ADWState(BaseModel):
@@ -38,6 +37,18 @@ class ADWState(BaseModel):
 
     # Errors
     errors: list[dict] = Field(default_factory=list)
+
+    @field_validator("workflow_type")
+    @classmethod
+    def validate_workflow_type(cls, value: str) -> str:
+        allowed = {"simple", "standard", "full", "prototype", "sdlc", "test_validation"}
+        if value in allowed:
+            return value
+        if value.startswith("adaptive:") and len(value) > len("adaptive:"):
+            return value
+        if value.startswith("dsl:") and len(value) > len("dsl:"):
+            return value
+        raise ValueError(f"Invalid workflow_type: {value}")
 
     @classmethod
     def get_path(cls, adw_id: str) -> Path:

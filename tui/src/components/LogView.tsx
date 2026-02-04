@@ -5,16 +5,21 @@ import { LogEntry } from '../hooks/useLogs.js';
 interface LogViewProps {
   logs: LogEntry[];
   maxLines?: number;
+  emptyState?: string;
 }
 
-export function LogView({ logs, maxLines = 20 }: LogViewProps) {
+export function LogView({ logs, maxLines = 20, emptyState = 'No messages yet.' }: LogViewProps) {
   const display = logs.slice(-maxLines);
 
   return (
     <Box flexDirection="column">
-      {display.map((log, i) => (
-        <LogLine key={i} log={log} />
-      ))}
+      {display.length === 0 ? (
+        <Text dimColor>{emptyState}</Text>
+      ) : (
+        display.map((log, i) => (
+          <LogLine key={i} log={log} />
+        ))
+      )}
     </Box>
   );
 }

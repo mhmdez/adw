@@ -197,8 +197,19 @@ def is_dev_server_running(port: int) -> bool:
     Returns:
         True if a server is listening on the port.
     """
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    try:
+        connect_result = sock.connect_ex(("127.0.0.1", port))
+        if connect_result == 0:
+            return True
+    finally:
+        sock.close()
+
     if is_macos():
-        # Use lsof on macOS
+        # Use lsof on macOS as a secondary check
         try:
             result = subprocess.run(
                 ["lsof", "-i", f":{port}", "-P", "-n"],
@@ -211,16 +222,7 @@ def is_dev_server_running(port: int) -> bool:
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
 
-    # Fallback: try to connect
-    import socket
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(1)
-    try:
-        connect_result = sock.connect_ex(("127.0.0.1", port))
-        return connect_result == 0
-    finally:
-        sock.close()
+    return False
 
 
 def detect_dev_server_ports() -> list[int]:

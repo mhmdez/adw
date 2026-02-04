@@ -5,6 +5,8 @@ export interface LogEntry {
   type: 'user' | 'assistant' | 'system' | 'error' | 'tool' | 'agent';
   message: string;
   agentId?: string;
+  taskId?: string;
+  subtaskId?: string;
 }
 
 export function useLogs(maxLogs = 100): [LogEntry[], (entry: Omit<LogEntry, 'timestamp'>) => void] {

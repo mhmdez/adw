@@ -62,7 +62,7 @@ Work in the current directory. When done, summarize what you accomplished.`;
     proc.stderr?.on('data', (data: Buffer) => {
       const msg = data.toString().trim();
       if (msg) {
-        addLog({ type: 'error', message: msg, agentId: id });
+        addLog({ type: 'error', message: msg, agentId: id, taskId: id });
       }
     });
 
@@ -72,9 +72,9 @@ Work in the current directory. When done, summarize what you accomplished.`;
       setAgents(new Map(agentsRef.current));
 
       if (code === 0) {
-        addLog({ type: 'system', message: `Agent ${id.slice(0, 8)} completed` });
+        addLog({ type: 'system', message: `Agent ${id.slice(0, 8)} completed`, taskId: id });
       } else {
-        addLog({ type: 'error', message: `Agent ${id.slice(0, 8)} failed (exit ${code})` });
+        addLog({ type: 'error', message: `Agent ${id.slice(0, 8)} failed (exit ${code})`, taskId: id });
       }
     });
 
@@ -123,18 +123,18 @@ function handleAgentEvent(
       for (const c of content) {
         if (c.type === 'text' && c.text) {
           const text = c.text.slice(0, 80);
-          addLog({ type: 'agent', message: text, agentId });
+          addLog({ type: 'agent', message: text, agentId, taskId: agentId });
           break;
         }
       }
     }
   } else if (type === 'tool_use') {
     const tool = event.tool?.name || 'unknown';
-    addLog({ type: 'tool', message: `Using ${tool}`, agentId });
+    addLog({ type: 'tool', message: `Using ${tool}`, agentId, taskId: agentId });
   } else if (type === 'result') {
-    addLog({ type: 'system', message: `Agent ${agentId.slice(0, 8)} finished`, agentId });
+    addLog({ type: 'system', message: `Agent ${agentId.slice(0, 8)} finished`, agentId, taskId: agentId });
   } else if (type === 'error') {
     const msg = event.error?.message || 'Unknown error';
-    addLog({ type: 'error', message: msg, agentId });
+    addLog({ type: 'error', message: msg, agentId, taskId: agentId });
   }
 }

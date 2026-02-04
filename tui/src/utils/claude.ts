@@ -2,21 +2,55 @@ import { spawn } from 'child_process';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
-export async function askClaude(question: string, cwd: string): Promise<string> {
+interface ClaudeContext {
+  task?: { id?: string; description?: string; tags?: string[] };
+  subtask?: string;
+  attachments?: { path: string; content: string }[];
+  recentLogs?: string[];
+}
+
+export async function askClaude(question: string, cwd: string, context?: ClaudeContext): Promise<string> {
   return new Promise((resolve, reject) => {
     // Build prompt with context if available
-    let context = '';
+    let contextText = '';
     const claudeMd = join(cwd, 'CLAUDE.md');
     if (existsSync(claudeMd)) {
       try {
         const content = readFileSync(claudeMd, 'utf-8');
-        context = `Project context:\n${content.slice(0, 2000)}\n\n`;
+        contextText = `Project context:\n${content.slice(0, 2000)}\n\n`;
       } catch {
         // Ignore
       }
     }
 
-    const prompt = `${context}Question: ${question}
+    if (context?.task) {
+      const tags = context.task.tags?.length ? ` (${context.task.tags.join(', ')})` : '';
+      contextText += `Task: ${context.task.description ?? 'Unknown'}${tags}\n`;
+      if (context.task.id) {
+        contextText += `Task ID: ${context.task.id}\n`;
+      }
+      if (context.subtask) {
+        contextText += `Subtask: ${context.subtask}\n`;
+      }
+      contextText += '\n';
+    }
+
+    if (context?.attachments && context.attachments.length > 0) {
+      contextText += 'Attached files:\n';
+      for (const file of context.attachments) {
+        contextText += `--- ${file.path} ---\n${file.content}\n\n`;
+      }
+    }
+
+    if (context?.recentLogs && context.recentLogs.length > 0) {
+      contextText += 'Recent updates:\n';
+      for (const line of context.recentLogs) {
+        contextText += `- ${line}\n`;
+      }
+      contextText += '\n';
+    }
+
+    const prompt = `${contextText}Question: ${question}
 
 Provide a concise, helpful answer.`;
 

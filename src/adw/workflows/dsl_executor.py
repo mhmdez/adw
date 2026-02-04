@@ -578,7 +578,7 @@ def run_dsl_workflow(
             adw_id=adw_id,
             task_description=task_description,
             worktree_name=worktree_name,
-            workflow_type=workflow.name,
+            workflow_type=f"dsl:{workflow.name}",
         ),
     )
     context.state.save("init")
@@ -671,7 +671,7 @@ def run_dsl_workflow(
                         generate_escalation_report(
                             task_id=adw_id,
                             task_description=task_description,
-                            workflow_type=workflow.name,
+                            workflow_type=f"dsl:{workflow.name}",
                             attempts=all_attempt_records,
                             output_dir=Path(f"agents/{adw_id}"),
                         )

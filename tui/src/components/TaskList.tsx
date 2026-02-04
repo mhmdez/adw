@@ -1,36 +1,59 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
-import { Task } from '../hooks/useTasks.js';
+import { Task, Subtask } from '../hooks/useTasks.js';
 
 interface TaskListProps {
   tasks: Task[];
+  expanded: Set<string>;
+  selectedTaskId?: string;
+  selectedSubtaskId?: string;
+  selectedIsNew?: boolean;
+  subtitleByTask?: Record<string, string>;
   maxItems?: number;
+  showNew?: boolean;
 }
 
-export function TaskList({ tasks, maxItems = 10 }: TaskListProps) {
-  // Sort: running first, then pending, then done
-  const sorted = [...tasks].sort((a, b) => {
-    const order: Record<string, number> = {
-      'in_progress': 0,
-      'pending': 1,
-      'blocked': 2,
-      'failed': 3,
-      'done': 4,
-    };
-    return (order[a.status] ?? 5) - (order[b.status] ?? 5);
-  });
-
-  const display = sorted.slice(0, maxItems);
-  const remaining = sorted.length - display.length;
+export function TaskList({
+  tasks,
+  expanded,
+  selectedTaskId,
+  selectedSubtaskId,
+  selectedIsNew,
+  subtitleByTask = {},
+  maxItems = 10,
+  showNew = false,
+}: TaskListProps) {
+  const display = tasks.slice(0, maxItems);
+  const remaining = tasks.length - display.length;
 
   return (
     <Box flexDirection="column">
+      {display.length === 0 && (
+        <Text dimColor>  No tasks yet</Text>
+      )}
       {display.map(task => (
-        <TaskItem key={task.id} task={task} />
+        <Box key={task.id} flexDirection="column">
+          <TaskItem
+            task={task}
+            expanded={expanded.has(task.id)}
+            selected={selectedTaskId === task.id && !selectedSubtaskId}
+            subtitle={subtitleByTask[task.id]}
+          />
+          {expanded.has(task.id) && (task.subtasks ?? []).map(subtask => (
+            <SubtaskItem
+              key={subtask.id}
+              subtask={subtask}
+              selected={selectedSubtaskId === subtask.id}
+            />
+          ))}
+        </Box>
       ))}
       {remaining > 0 && (
         <Text dimColor>  ... and {remaining} more</Text>
+      )}
+      {showNew && (
+        <NewTaskItem selected={!!selectedIsNew} />
       )}
     </Box>
   );
@@ -38,21 +61,32 @@ export function TaskList({ tasks, maxItems = 10 }: TaskListProps) {
 
 interface TaskItemProps {
   task: Task;
+  expanded: boolean;
+  selected: boolean;
+  subtitle?: string;
 }
 
-function TaskItem({ task }: TaskItemProps) {
+function TaskItem({ task, expanded, selected, subtitle }: TaskItemProps) {
   const shortId = task.id.slice(0, 8);
   const desc = task.description.length > 50
     ? task.description.slice(0, 47) + '...'
     : task.description;
+  const hasSubtasks = (task.subtasks?.length ?? 0) > 0;
 
   return (
-    <Box>
-      <StatusIcon status={task.status} />
-      <Text dimColor> {shortId} </Text>
-      <TaskText status={task.status} text={desc} />
-      {task.activity && (
-        <Text dimColor italic> - {task.activity.slice(0, 20)}</Text>
+    <Box flexDirection="column">
+      <Box>
+        <Text color={selected ? 'yellow' : undefined}>{selected ? '›' : ' '}</Text>
+        <Text dimColor> </Text>
+        <Text dimColor>{hasSubtasks ? (expanded ? '▾' : '▸') : ' '} </Text>
+        <StatusIcon status={task.status} />
+        <Text dimColor> {shortId} </Text>
+        <TaskText status={task.status} text={desc} />
+      </Box>
+      {subtitle && (
+        <Box marginLeft={5}>
+          <Text dimColor>{subtitle.slice(0, 80)}</Text>
+        </Box>
       )}
     </Box>
   );
@@ -88,4 +122,27 @@ function TaskText({ status, text }: { status: string; text: string }) {
     default:
       return <Text>{text}</Text>;
   }
+}
+
+function SubtaskItem({ subtask, selected }: { subtask: Subtask; selected: boolean }) {
+  const done = subtask.status === 'done';
+  return (
+    <Box marginLeft={4}>
+      <Text color={selected ? 'yellow' : undefined}>{selected ? '›' : ' '}</Text>
+      <Text dimColor> </Text>
+      <Text color={done ? 'green' : 'dim'}>{done ? '✓' : '○'}</Text>
+      <Text dimColor> {subtask.title.slice(0, 70)}</Text>
+    </Box>
+  );
+}
+
+function NewTaskItem({ selected }: { selected: boolean }) {
+  return (
+    <Box>
+      <Text color={selected ? 'yellow' : undefined}>{selected ? '›' : ' '}</Text>
+      <Text dimColor> </Text>
+      <Text color="green">＋</Text>
+      <Text dimColor> New task</Text>
+    </Box>
+  );
 }
