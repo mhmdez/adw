@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs';
+import { join, dirname } from 'path';
 import { watch } from 'chokidar';
 
 export interface Subtask {
@@ -16,10 +16,36 @@ export interface Task {
   activity?: string;
   subtasks?: Subtask[];
   tags?: string[];
+  adwId?: string;
 }
 
-function generateId(): string {
-  return Math.random().toString(16).slice(2, 10);
+const TASK_ID_REGEX = /\bTASK-\d+\b/;
+const ADW_ID_REGEX = /^[a-f0-9]{8}$/i;
+
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0').slice(0, 8);
+}
+
+function fallbackIdFromLine(line: string): string {
+  return hashString(line);
+}
+
+function extractTaskId(text: string): string | undefined {
+  const match = text.match(TASK_ID_REGEX);
+  return match?.[0];
+}
+
+function splitTaskPrefix(text: string): { prefix: string; id?: string; description: string } {
+  const match = text.match(/^(\s*(?:\*\*)?TASK-\d+(?:\*\*)?:\s*)(.*)$/);
+  if (!match) {
+    return { prefix: '', description: text.trim() };
+  }
+  const idMatch = match[1].match(TASK_ID_REGEX);
+  return { prefix: match[1], id: idMatch?.[0], description: match[2].trim() };
 }
 
 function extractTags(text: string): { cleaned: string; tags: string[] } {
@@ -43,18 +69,81 @@ function formatTags(tags: string[] | undefined): string {
   return ` {${tags.join(', ')}}`;
 }
 
-function statusToEmoji(status: Task['status']): string {
+function parseStatus(statusPart: string): Task['status'] {
+  const trimmed = statusPart.trim();
+  if (!trimmed) {
+    return 'pending';
+  }
+  if (trimmed.includes('⏰') || trimmed.includes('blocked')) {
+    return 'blocked';
+  }
+  if (trimmed.includes('🟡') || trimmed.includes('⏳')) {
+    return 'in_progress';
+  }
+  if (trimmed.includes('✅') || trimmed.includes('✓')) {
+    return 'done';
+  }
+  if (trimmed.includes('❌') || trimmed.includes('✗')) {
+    return 'failed';
+  }
+  return 'pending';
+}
+
+function extractAdwId(statusPart: string): string | undefined {
+  const parts = statusPart
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i -= 1) {
+    if (ADW_ID_REGEX.test(parts[i])) {
+      return parts[i];
+    }
+  }
+  return undefined;
+}
+
+function parseMarkerTokens(statusPart: string): { adwId?: string; commit?: string } {
+  const parts = statusPart
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+  const others = parts.slice(1);
+  let adwId: string | undefined;
+  let commit: string | undefined;
+
+  for (const token of others) {
+    if (ADW_ID_REGEX.test(token)) {
+      adwId = token;
+    } else if (/^[a-f0-9]{7,40}$/i.test(token)) {
+      commit = token;
+    }
+  }
+
+  return { adwId, commit };
+}
+
+function buildMarker(status: Task['status'], adwId?: string, commit?: string): string {
   switch (status) {
-    case 'done':
-      return '✅';
-    case 'failed':
-      return '❌';
+    case 'pending':
+      return '[ ]';
     case 'blocked':
-      return '⏰';
+      return '[⏰]';
     case 'in_progress':
-      return '🟡';
+      return adwId ? `[🟡, ${adwId}]` : '[🟡]';
+    case 'done': {
+      const parts = ['✅'];
+      if (commit) {
+        parts.push(commit);
+      }
+      if (adwId) {
+        parts.push(adwId);
+      }
+      return `[${parts.join(', ')}]`;
+    }
+    case 'failed':
+      return adwId ? `[❌, ${adwId}]` : '[❌]';
     default:
-      return ' ';
+      return '[ ]';
   }
 }
 
@@ -71,13 +160,57 @@ function statusToCheckbox(status: Task['status']): string {
   }
 }
 
+function getNextTaskId(content: string): string {
+  let maxNum = 0;
+  const matches = content.match(/TASK-(\d+)/g) ?? [];
+  for (const match of matches) {
+    const num = Number(match.replace('TASK-', ''));
+    if (!Number.isNaN(num)) {
+      maxNum = Math.max(maxNum, num);
+    }
+  }
+  return `TASK-${String(maxNum + 1).padStart(3, '0')}`;
+}
+
+function insertTaskLine(content: string, taskLine: string): string {
+  if (content.includes('## Active Tasks')) {
+    const parts = content.split('## Active Tasks', 1);
+    const rest = content.slice(parts[0].length + '## Active Tasks'.length);
+    const lines = rest.split('\n');
+    let insertIdx = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (line.trim() && !line.trim().startsWith('<!--')) {
+        insertIdx = i;
+        break;
+      }
+      insertIdx = i + 1;
+    }
+    lines.splice(insertIdx, 0, taskLine);
+    return parts[0] + '## Active Tasks' + lines.join('\n');
+  }
+
+  return content.trimEnd() + `\n\n## Active Tasks\n\n${taskLine}\n`;
+}
+
+function writeFileAtomic(path: string, content: string, backupContent?: string): void {
+  const dir = dirname(path);
+  const tempPath = join(dir, `.tmp-${Date.now()}-${process.pid}`);
+  if (backupContent !== undefined) {
+    const backupPath = `${path}.bak`;
+    writeFileSync(backupPath, backupContent);
+  }
+  writeFileSync(tempPath, content);
+  renameSync(tempPath, path);
+}
+
 function parseTasks(content: string): Task[] {
   const tasks: Task[] = [];
   const lines = content.split('\n');
   let currentTask: Task | null = null;
   let counter = 1;
 
-  const legacyPattern = /^\[([^\]]*)\]\s*(.+)$/;
+  const legacyPattern = /^(\s*(?:-\s+)?)\[([^\]]*)\]\s*(.+)$/;
   const listTaskPattern = /^-\s+\[([ xX\-!])\]\s+(?:([A-Z]+-\d+):\s+)?(.+?)(?:\s+\((pending|in_progress|done|blocked|failed)\))?\s*$/;
   const subtaskPattern = /^\s+-\s+\[([ xX])\]\s+(.+)$/;
 
@@ -97,44 +230,29 @@ function parseTasks(content: string): Task[] {
       }
 
       const { cleaned, tags } = extractTags(title);
-      const id = explicitId || `TASK-${String(counter++).padStart(3, '0')}`;
-      currentTask = { id, description: cleaned, status, subtasks: [], tags };
+      const prefixInfo = splitTaskPrefix(cleaned);
+      const idFromDesc = prefixInfo.id ?? extractTaskId(cleaned);
+      const id = explicitId || idFromDesc || `TASK-${String(counter++).padStart(3, '0')}`;
+      const description = prefixInfo.prefix ? prefixInfo.description : cleaned.trim();
+
+      currentTask = { id, description, status, subtasks: [], tags };
       tasks.push(currentTask);
       continue;
     }
 
     const legacyMatch = line.match(legacyPattern);
     if (legacyMatch) {
-      const [, statusPart, description] = legacyMatch;
-      const trimmedStatus = statusPart.trim();
+      const [, , statusPart, rest] = legacyMatch;
+      const status = parseStatus(statusPart);
+      const adwId = extractAdwId(statusPart);
 
-      let status: Task['status'] = 'pending';
-      let id = '';
+      const { cleaned, tags } = extractTags(rest);
+      const prefixInfo = splitTaskPrefix(cleaned);
+      const idFromDesc = prefixInfo.id ?? extractTaskId(cleaned);
+      const id = idFromDesc || adwId || fallbackIdFromLine(line);
+      const description = prefixInfo.prefix ? prefixInfo.description : cleaned.trim();
 
-      if (trimmedStatus === '') {
-        status = 'pending';
-        id = generateId();
-      } else if (trimmedStatus === '⏰') {
-        status = 'blocked';
-        id = generateId();
-      } else {
-        const parts = trimmedStatus.split(',').map(s => s.trim());
-        const emoji = parts[0];
-        id = parts[1] || generateId();
-
-        if (emoji === '✅' || emoji === '✓') {
-          status = 'done';
-        } else if (emoji === '🟡' || emoji === '⏳') {
-          status = 'in_progress';
-        } else if (emoji === '❌' || emoji === '✗') {
-          status = 'failed';
-        } else if (emoji === '⏰') {
-          status = 'blocked';
-        }
-      }
-
-      const { cleaned, tags } = extractTags(description);
-      currentTask = { id, description: cleaned, status, subtasks: [], tags };
+      currentTask = { id, description, status, subtasks: [], tags, adwId };
       tasks.push(currentTask);
       continue;
     }
@@ -186,20 +304,21 @@ export function useTasks(cwd: string) {
   }, [tasksFile, reload]);
 
   const addTask = useCallback((description: string, tags: string[] = []): Task => {
-    const id = generateId();
-    const task: Task = { id, description, status: 'in_progress', subtasks: [], tags };
-
-    // Read current content
     let content = '';
     if (existsSync(tasksFile)) {
       content = readFileSync(tasksFile, 'utf-8');
     } else {
-      content = '# Tasks\n\n';
+      content = '# Tasks\n\n## Active Tasks\n\n## Completed Tasks\n';
+      writeFileAtomic(tasksFile, content);
     }
 
-    // Append task
-    content = content.trimEnd() + `\n[🟡, ${id}] ${description}${formatTags(tags)}\n`;
-    writeFileSync(tasksFile, content);
+    const id = getNextTaskId(content);
+    const task: Task = { id, description, status: 'pending', subtasks: [], tags };
+    const taskLine = `[ ] **${id}**: ${description}${formatTags(tags)}`;
+
+    const nextContent = insertTaskLine(content, taskLine);
+    const backupContent = existsSync(tasksFile) ? content : undefined;
+    writeFileAtomic(tasksFile, nextContent, backupContent);
 
     reload();
     return task;
@@ -220,38 +339,45 @@ export function useTasks(cwd: string) {
     const lines = content.split('\n');
     let updated = false;
 
-    const legacyPattern = /^\[([^\]]*)\]\s*(.+)$/;
+    const legacyPattern = /^(\s*(?:-\s+)?)\[([^\]]*)\]\s*(.+)$/;
     const listPattern = /^-\s+\[([ xX\-!])\]\s+(?:([A-Z]+-\d+):\s+)?(.+?)(?:\s+\((pending|in_progress|done|blocked|failed)\))?\s*$/;
 
     const nextLines = lines.map(line => {
-      const legacyMatch = line.match(legacyPattern);
-      if (legacyMatch) {
-        const statusPart = legacyMatch[1];
-        const description = legacyMatch[2];
-        const parts = statusPart.split(',').map(part => part.trim());
-        const idCandidate = parts[1];
-        if (idCandidate === id) {
-          const { cleaned, tags } = extractTags(description);
-          const nextDescription = updates.description ?? cleaned;
-          const nextTags = updates.tags ?? tags;
-          const emoji = updates.status ? statusToEmoji(updates.status) : (parts[0] || ' ');
-          updated = true;
-          return `[${emoji}, ${id}] ${nextDescription}${formatTags(nextTags)}`;
-        }
-      }
-
       const listMatch = line.match(listPattern);
       if (listMatch) {
         const [, checkbox, explicitId, title, explicitStatus] = listMatch;
-        if (explicitId === id) {
-          const { cleaned, tags } = extractTags(title);
-          const nextDescription = updates.description ?? cleaned;
+        const { cleaned, tags } = extractTags(title);
+        const prefixInfo = splitTaskPrefix(cleaned);
+        const lineId = explicitId || prefixInfo.id || extractTaskId(cleaned);
+        if (lineId === id) {
+          const nextDescription = updates.description ?? (prefixInfo.prefix ? prefixInfo.description : cleaned.trim());
           const nextTags = updates.tags ?? tags;
           const nextStatus = updates.status ?? (explicitStatus as Task['status'] | undefined);
           const checkboxValue = nextStatus ? statusToCheckbox(nextStatus) : checkbox;
           const statusSuffix = explicitStatus ? ` (${nextStatus ?? explicitStatus})` : '';
           updated = true;
-          return `- [${checkboxValue}] ${explicitId}: ${nextDescription}${formatTags(nextTags)}${statusSuffix}`;
+
+          const titlePrefix = prefixInfo.prefix;
+          const titleText = `${titlePrefix}${nextDescription}`.trim();
+          return `- [${checkboxValue}] ${explicitId ? `${explicitId}: ` : ''}${titleText}${formatTags(nextTags)}${statusSuffix}`;
+        }
+      }
+
+      const legacyMatch = line.match(legacyPattern);
+      if (legacyMatch) {
+        const [, lead, statusPart, rest] = legacyMatch;
+        const { cleaned, tags } = extractTags(rest);
+        const prefixInfo = splitTaskPrefix(cleaned);
+        const lineId = prefixInfo.id || extractTaskId(cleaned) || extractAdwId(statusPart);
+
+        if (lineId === id) {
+          const nextDescription = updates.description ?? (prefixInfo.prefix ? prefixInfo.description : cleaned.trim());
+          const nextTags = updates.tags ?? tags;
+          const { adwId, commit } = parseMarkerTokens(statusPart);
+          const marker = updates.status ? buildMarker(updates.status, adwId, commit) : `[${statusPart}]`;
+          const titlePrefix = prefixInfo.prefix;
+          updated = true;
+          return `${lead}${marker} ${titlePrefix}${nextDescription}${formatTags(nextTags)}`;
         }
       }
 
@@ -259,7 +385,7 @@ export function useTasks(cwd: string) {
     });
 
     if (updated) {
-      writeFileSync(tasksFile, nextLines.join('\n'));
+      writeFileAtomic(tasksFile, nextLines.join('\n'), content);
       reload();
     }
 
@@ -276,3 +402,11 @@ export function useTasks(cwd: string) {
 
   return { tasks, reload, addTask, updateTask, setTaskStatus, setTaskTags };
 }
+
+export const __test__ = {
+  parseTasks,
+  insertTaskLine,
+  buildMarker,
+  extractTags,
+  splitTaskPrefix,
+};

@@ -46,7 +46,7 @@ const COMMANDS: Suggestion[] = [
   { type: 'command', value: 'files', description: 'Show changed files' },
   { type: 'command', value: 'tags', description: 'Show task tags' },
   { type: 'command', value: 'status', description: 'Show status' },
-  { type: 'command', value: 'kill', description: 'Kill agent' },
+  { type: 'command', value: 'kill', description: 'Cancel task' },
   { type: 'command', value: 'quit', description: 'Exit' },
 ];
 
@@ -76,7 +76,7 @@ export function App({ cwd }: AppProps) {
   const [inputValue, setInputValue] = useState('');
   const [logs, addLog] = useLogs();
   const { tasks, reload: reloadTasks, addTask, setTaskStatus, setTaskTags } = useTasks(cwd);
-  const { agents, spawn, kill, poll } = useAgents(cwd, addLog);
+  const { daemonRunning, agentMode, agents, spawn, kill, poll, stopDaemon, stopFallbackAgents } = useAgents(cwd, addLog);
   const { files: indexedFiles, isIndexing } = useFileIndex(cwd);
   const { files: changedFiles, isRepo } = useGitStatus(cwd);
   const [isThinking, setIsThinking] = useState(false);
@@ -89,6 +89,7 @@ export function App({ cwd }: AppProps) {
   const [testCommand, setTestCommand] = useState<string | null>(null);
   const [testStatusByTask, setTestStatusByTask] = useState<Record<string, TestStatus>>({});
   const [attachedFilesByTask, setAttachedFilesByTask] = useState<Record<string, string[]>>({});
+  const [exitPrompt, setExitPrompt] = useState(false);
   const testProcessRef = useRef<ChildProcess | null>(null);
 
   // Poll agents periodically
@@ -153,6 +154,28 @@ export function App({ cwd }: AppProps) {
       setShowInbox(true);
       setShowContext(true);
     }
+  };
+
+  const requestExit = () => {
+    if (exitPrompt) return;
+    const hasBackend = daemonRunning || agents.size > 0;
+    if (!hasBackend) {
+      exit();
+      return;
+    }
+    setExitPrompt(true);
+  };
+
+  const exitContinue = () => {
+    setExitPrompt(false);
+    exit();
+  };
+
+  const exitStop = () => {
+    setExitPrompt(false);
+    stopDaemon();
+    stopFallbackAgents();
+    exit();
   };
 
   const runTests = (taskId: string, overrideCommand?: string) => {
@@ -273,9 +296,9 @@ export function App({ cwd }: AppProps) {
       case 'kill':
         if (args) {
           kill(args);
-          addLog({ type: 'system', message: `Killed agent ${args.slice(0, 8)}` });
+          addLog({ type: 'system', message: `Cancel requested for ${args}` });
         } else {
-          addLog({ type: 'error', message: 'Usage: /kill <agent_id>' });
+          addLog({ type: 'error', message: 'Usage: /kill <task_id>' });
         }
         break;
       case 'status':
@@ -323,7 +346,7 @@ export function App({ cwd }: AppProps) {
         break;
       case 'quit':
       case 'exit':
-        exit();
+        requestExit();
         break;
       default:
         addLog({ type: 'error', message: `Unknown command: /${command}` });
@@ -398,9 +421,9 @@ export function App({ cwd }: AppProps) {
 
     try {
       spawn(task.id, taskDescription);
-      addLog({ type: 'system', message: `Agent spawned for ${task.id.slice(0, 8)}`, taskId: task.id });
+      addLog({ type: 'system', message: `Task queued for ADW (${task.id})`, taskId: task.id });
     } catch (error) {
-      addLog({ type: 'error', message: `Failed to spawn agent: ${error}`, taskId: task.id });
+      addLog({ type: 'error', message: `Failed to queue task: ${error}`, taskId: task.id });
     }
   };
 
@@ -435,13 +458,13 @@ export function App({ cwd }: AppProps) {
       addLog({ type: 'error', message: 'Select a task to resume.' });
       return;
     }
-    setTaskStatus(selectedTask.id, 'in_progress');
-    if (agents.has(selectedTask.id)) {
-      addLog({ type: 'system', message: 'Agent already running for this task.', taskId: selectedTask.id });
+    if (selectedTask.status === 'in_progress') {
+      addLog({ type: 'system', message: 'Task already running.', taskId: selectedTask.id });
       return;
     }
+    setTaskStatus(selectedTask.id, 'pending');
     spawn(selectedTask.id, selectedTask.description);
-    addLog({ type: 'system', message: 'Task resumed.', taskId: selectedTask.id });
+    addLog({ type: 'system', message: 'Task resumed (queued).', taskId: selectedTask.id });
   };
 
   const approveTask = () => {
@@ -543,7 +566,13 @@ export function App({ cwd }: AppProps) {
           addLog({ type: 'error', message: 'Select a task to open logs.' });
           break;
         }
-        const logPath = join(cwd, 'agents', selectedTaskId, 'prompt', 'cc_raw_output.jsonl');
+        const logTaskId = selectedTask?.adwId ?? selectedTaskId;
+        const fallbackLogAllowed = agentMode === 'fallback' && selectedTaskId;
+        if (!selectedTask?.adwId && selectedTaskId?.startsWith('TASK-') && !fallbackLogAllowed) {
+          addLog({ type: 'error', message: 'Agent log not available yet (no ADW ID assigned).', taskId: selectedTaskId });
+          break;
+        }
+        const logPath = join(cwd, 'agents', logTaskId, 'prompt', 'cc_raw_output.jsonl');
         if (existsSync(logPath)) {
           addLog({ type: 'system', message: `Agent log: ${logPath}`, taskId: selectedTaskId });
         } else {
@@ -570,7 +599,7 @@ export function App({ cwd }: AppProps) {
       '  /test [cmd]     Run tests (optional command)',
       '  /files          Show changed files',
       '  /tags           Show task tags',
-      '  /kill <id>      Kill running agent',
+      '  /kill <id>      Cancel a task',
       '  /status         Show status',
       '  /clear          Clear logs',
       '  /quit           Exit',
@@ -600,7 +629,12 @@ export function App({ cwd }: AppProps) {
     addLog({ type: 'system', message: `  Blocked: ${blocked}` });
     addLog({ type: 'system', message: `  Failed: ${failed}` });
     addLog({ type: 'system', message: `  Done: ${done}` });
-    addLog({ type: 'system', message: `Agents: ${agents.size} active` });
+    addLog({ type: 'system', message: `Backend: ${agentMode}` });
+    if (agentMode === 'fallback') {
+      addLog({ type: 'system', message: `Fallback agents: ${agents.size}` });
+    } else {
+      addLog({ type: 'system', message: `Daemon: ${daemonRunning ? 'running' : 'stopped'}` });
+    }
     addLog({ type: 'system', message: '' });
   };
 
@@ -609,6 +643,9 @@ export function App({ cwd }: AppProps) {
   const blockedCount = tasks.filter(t => t.status === 'blocked').length;
   const failedCount = tasks.filter(t => t.status === 'failed').length;
   const doneCount = tasks.filter(t => t.status === 'done').length;
+  const backendSummary = agentMode === 'fallback'
+    ? `Fallback ${agents.size}`
+    : `Daemon ${daemonRunning ? 'on' : 'off'}`;
   const safetyEnabled = useMemo(() => existsSync(join(cwd, '.claude', 'hooks')), [cwd]);
 
   const sortedTasks = useMemo(() => {
@@ -751,12 +788,15 @@ export function App({ cwd }: AppProps) {
 
   const filteredLogs = useMemo(() => {
     if (selectedTaskId) {
-      return logs.filter(log =>
-        log.taskId === selectedTaskId && (selectedSubtaskId ? log.subtaskId === selectedSubtaskId : true)
-      );
+      const selectedAdwId = selectedTask?.adwId;
+      return logs.filter(log => {
+        const matchesTask = log.taskId === selectedTaskId || (selectedAdwId && log.taskId === selectedAdwId);
+        if (!matchesTask) return false;
+        return selectedSubtaskId ? log.subtaskId === selectedSubtaskId : true;
+      });
     }
     return logs.filter(log => !log.taskId);
-  }, [logs, selectedTaskId, selectedSubtaskId]);
+  }, [logs, selectedTaskId, selectedSubtaskId, selectedTask]);
 
   const inputHint = useMemo(() => {
     if (inputValue.startsWith('/')) {
@@ -868,8 +908,23 @@ export function App({ cwd }: AppProps) {
 
   // Handle keyboard shortcuts
   useInput((keyInput, key) => {
+    if (exitPrompt) {
+      if (key.escape) {
+        setExitPrompt(false);
+        return;
+      }
+      if (keyInput.toLowerCase() === 'c' || keyInput.toLowerCase() === 'y') {
+        exitContinue();
+        return;
+      }
+      if (keyInput.toLowerCase() === 's' || keyInput.toLowerCase() === 'n') {
+        exitStop();
+        return;
+      }
+      return;
+    }
     if (key.ctrl && keyInput === 'c') {
-      exit();
+      requestExit();
     }
     if (key.tab && suggestions.length > 0) {
       applySuggestion(suggestions[selectedSuggestionIndex]);
@@ -935,7 +990,7 @@ export function App({ cwd }: AppProps) {
       <Box justifyContent="space-between">
         <Text color="cyan" bold>ADW</Text>
         <Text dimColor>
-          Tasks {tasks.length} • Run {runningCount} • Pending {pendingCount} • Blocked {blockedCount} • Failed {failedCount} • Done {doneCount} • Agents {agents.size}
+          Tasks {tasks.length} • Run {runningCount} • Pending {pendingCount} • Blocked {blockedCount} • Failed {failedCount} • Done {doneCount} • {backendSummary}
         </Text>
         <Text color={safetyEnabled ? 'green' : 'red'}>
           {safetyEnabled ? 'Safety: OK' : 'Safety: OFF'}
@@ -987,12 +1042,14 @@ export function App({ cwd }: AppProps) {
       </Box>
 
       {/* Input Hint */}
-      <Box>
-        <Text dimColor>{inputHint}</Text>
-      </Box>
+      {!exitPrompt && (
+        <Box>
+          <Text dimColor>{inputHint}</Text>
+        </Box>
+      )}
 
       {/* Suggestions */}
-      {suggestions.length > 0 && (
+      {!exitPrompt && suggestions.length > 0 && (
         <Box>
           <Text dimColor>Suggestions: </Text>
           {suggestions.map((suggestion, index) => (
@@ -1012,7 +1069,12 @@ export function App({ cwd }: AppProps) {
 
       {/* Input */}
       <Box marginTop={1}>
-        {isThinking ? (
+        {exitPrompt ? (
+          <Box>
+            <Text color="yellow">Exit ADW? </Text>
+            <Text dimColor>(c) continue in background • (s) stop • (esc) cancel</Text>
+          </Box>
+        ) : isThinking ? (
           <Box>
             <Text color="cyan">
               <Spinner type="dots" />

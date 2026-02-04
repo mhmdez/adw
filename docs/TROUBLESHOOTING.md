@@ -200,6 +200,42 @@ claude --dangerously-skip-permissions
    adw run --dry-run
    ```
 
+---
+
+## Ink TUI (Node) Issues
+
+### ADW CLI Not Found
+
+**Symptoms:** TUI logs `ADW CLI not found` and falls back to raw Claude.
+
+**Solutions:**
+```bash
+which adw
+uv tool install adw-cli
+```
+
+Ensure the `adw` binary is on your PATH, then restart the TUI.
+
+### No Live Events in TUI
+
+**Symptoms:** Tasks run but the Ink TUI shows no streaming updates.
+
+**Solutions:**
+```bash
+adw events --follow --json
+```
+
+If this fails, confirm the observability DB is writable and `adw` is up to date.
+
+### Task Logs Missing
+
+**Symptoms:** TUI shows `Agent log not available yet (no ADW ID assigned).`
+
+**Solutions:**
+- Run the daemon so tasks get an ADW ID: `adw run`
+- Then check logs: `adw logs <task_id>`
+- In fallback mode, logs live under `agents/<TASK-ID>/prompt/cc_raw_output.jsonl`
+
 4. **Check for blocking tasks:**
    Look for `[⏰]` tasks above your pending task
 
